@@ -13,6 +13,7 @@ RWTexture2D<float4> Filtered : register(u6);
 RWTexture2D<float4> DenoiseTemp : register(u7);
 RWTexture2D<float4> PhotonTemp : register(u8);
 RWTexture2D<float4> PhotonFiltered : register(u9);
+RWTexture2D<float4> Resolved : register(u10);
 cbuffer Constants : register(b0) {
  float4 CameraOrigin,CameraForward,CameraRight,CameraUp,Settings;
  uint4 Counts,Options;
@@ -71,7 +72,7 @@ float3 visibility(float3 o,float3 d,float maximum){
   medium=dot(d,hit.n.xyz)<0?int(hit.meta.x):-1;o+=d*(t+.0005);maximum-=t+.0005;if(maximum<=0)return transmission;
  }return 0;
 }
-float3 environment(float3 d){return lerp(float3(.004,.006,.011),float3(.025,.033,.05),smoothstep(-.15,.8,d.y));}
+float3 environment(float3 d){return (Options.w&16)!=0?float3(0,0,0):lerp(float3(.004,.006,.011),float3(.025,.033,.05),smoothstep(-.15,.8,d.y));}
 bool receiverUV(float3 p,uint material,out float2 pixel,out float area){
  if(material==3){pixel=float2((p.x+12)/24*2048,(p.y+.58)/22*1024);area=528.0/(2048*1024);return all(pixel>=0)&&pixel.x<2047&&pixel.y<1023;}
  if(material==0){pixel=float2((p.x+12)/24*2048,(p.z+8)/20*1024+1024);area=480.0/(2048*1024);return pixel.x>=0&&pixel.x<2047&&pixel.y>=1024&&pixel.y<2047;}
@@ -187,7 +188,7 @@ float3 stablePath(float3 o,float3 d,int channel){
    float3 reflected,transmitted,wr;float wt,wd;surfaceLobes(m,ray.d,n,entering,channel,reflected,transmitted,wr,wt,wd);
    if(dot(reflected,geometric)<=0)reflected=reflect(ray.d,geometric);
    if(wt>0&&dot(transmitted,geometric)>=0)transmitted=refract(ray.d,geometric,entering?1/m.params.y:m.params.y);
-   float3 ambient=lerp(float3(.024,.027,.033),float3(.075,.083,.10),saturate(n.y*.5+.5));
+   float3 ambient=(Options.w&16)!=0?float3(0,0,0):lerp(float3(.024,.027,.033),float3(.075,.083,.10),saturate(n.y*.5+.5));
    result+=ray.weight*(directLighting(p,n,-ray.d,m,kind==1)+m.colorType.xyz*wd*(ambient+causticIrradiance(p,hit.meta.x)/PI));
    ray.rough=m.params.x>.12?1:0;OpticalRay secondary=ray;secondary.depth=ray.depth+1;float3 secondarySide,primarySide;
    if(wt>max(wr.x,max(wr.y,wr.z))){secondary.d=reflected;secondary.weight*=wr;secondarySide=geometric;ray.d=transmitted;ray.weight*=wt;ray.medium=entering?int(hit.meta.x):-1;primarySide=-geometric;}
@@ -278,5 +279,26 @@ float3 aces(float3 x){return saturate((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14));}
   [unroll]for(int y=-2;y<=2;y++)[unroll]for(int x=-2;x<=2;x++){int2 q=clamp(int2(id.xy)+int2(x,y)*2,int2(0,0),int2(Counts.xy)-1);float w=exp(-.35*(x*x+y*y))*edgeWeight(g,Guide[q]);sum+=DenoiseTemp[q].xyz*w;weights+=w;}
   color=lerp(color,sum/max(.001,weights),(Options.w&1)!=0?.8:.5);
  }
- float2 uv=float2(id.xy)/float2(Counts.xy)*2-1;float vignette=1-.06*dot(uv,uv);color=pow(max(0,aces(color*RenderParams.x)*vignette),1/2.2);Display[id.xy]=float4(color,1);
+ float2 uv=float2(id.xy)/float2(Counts.xy)*2-1;float vignette=1-.06*dot(uv,uv);color=pow(max(0,aces(color*RenderParams.x)*vignette),1/2.2);Resolved[id.xy]=float4(color,1);
+}
+float3 resolvedPixel(int2 p){return Resolved[clamp(p,int2(0,0),int2(Counts.xy)-1)].rgb;}
+float3 resolvedSample(float2 p){
+ int2 q=int2(floor(p));float2 f=frac(p);
+ return lerp(lerp(resolvedPixel(q),resolvedPixel(q+int2(1,0)),f.x),lerp(resolvedPixel(q+int2(0,1)),resolvedPixel(q+int2(1,1)),f.x),f.y);
+}
+// Spatial edge antialiasing after tone mapping. No random offsets or history:
+// it works on the first moving frame and never filters the ImGui overlay.
+[numthreads(8,8,1)]void Antialias(uint3 id:SV_DispatchThreadID){
+ if(id.x>=Counts.x||id.y>=Counts.y)return;int2 p=int2(id.xy);float3 center=resolvedPixel(p);
+ if((Options.w&32)==0){Display[p]=float4(center,1);return;}
+ float nw=luminance(resolvedPixel(p+int2(-1,-1))),ne=luminance(resolvedPixel(p+int2(1,-1)));
+ float sw=luminance(resolvedPixel(p+int2(-1,1))),se=luminance(resolvedPixel(p+int2(1,1))),m=luminance(center);
+ float lo=min(m,min(min(nw,ne),min(sw,se))),hi=max(m,max(max(nw,ne),max(sw,se)));
+ if(hi-lo<max(.025,hi*.10)){Display[p]=float4(center,1);return;}
+ float2 direction=float2(-(nw+ne-sw-se),nw+sw-ne-se);
+ float reduce=max((nw+ne+sw+se)*(.25*.125),1.0/128);
+ direction=clamp(direction/(min(abs(direction.x),abs(direction.y))+reduce),-8,8);
+ float3 a=.5*(resolvedSample(float2(p)-direction/6)+resolvedSample(float2(p)+direction/6));
+ float3 b=a*.5+.25*(resolvedSample(float2(p)-direction*.5)+resolvedSample(float2(p)+direction*.5));
+ float l=luminance(b);Display[p]=float4(l<lo||l>hi?a:b,1);
 }

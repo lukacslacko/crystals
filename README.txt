@@ -1,6 +1,6 @@
 CRYSTAL TUMBLER / ROTATING METAL CUBE / NATIVE DXR
 
-Run CrystalSlab.exe with all eight .cso shaders beside it.
+Run CrystalSlab.exe with all nine .cso shaders beside it.
 This portable C++20 / DirectX 12 app runs offline on a DXR 1.1 capable GPU.
 
 THE ROTATING CUBE
@@ -45,6 +45,7 @@ The four walls parallel to the rotation axis can be Invisible, Paper, Stone or
 Metal, together or individually. Their names refer to their starting positions.
 Enable "Thin glass on invisible walls" to render every invisible side plus both
 end walls as clear glass panes. They are closed solids, 0.035 units thick, with
+a 0.015-unit air gap outside the collision boundaries to avoid coplanar surfaces,
 IOR 1.5, Fresnel reflections and slight green edge absorption. Camera and photon
 rays refract through both faces. Direct shadow connections approximate straight
 transmission through the thin parallel faces, including Fresnel and absorption
@@ -148,7 +149,23 @@ Cube rotation: -12 to +12 degrees per second. Zero stops the motor while gravity
 and free-body physics continue. Negative values reverse its direction.
 Left click: extract a crystal. Right drag: orbit. Wheel: zoom.
 Tab: hide/show the controls. M: mute/unmute. F9: save a clean PNG photograph.
-Cell count: 24 to 96, applied on release.
+Cell count: 1 to 96, applied on release.
+Original object: box, faceted ellipsoid, cylinder (Y axis), or octahedron.
+  Width, height and depth: 0.5 to 9.8 units, applied on release.
+  Oversized dimensions scale together to fit a 5.05-unit radius, leaving room
+  to tumble even with a single cell. The panel also shows the fitted dimensions.
+  Equal ellipsoid dimensions give a faceted sphere. Restore original slab
+  returns to the 8 x 5 x 2.8 box. These controls rebuild and drop the crystals.
+  Object dimensions, shape and cell count are session settings.
+Float in blackness: remove the floor, backdrop and ambient environment from
+  camera, reflection and refraction rays; retain the spotlight and cube.
+  Saved with material preferences.
+Fullscreen / F11: borderless fullscreen on the current monitor.
+  Escape leaves fullscreen; the previous window position and size are restored.
+Antialiasing: enabled by default. A spatial edge filter runs after tone mapping,
+  before the UI, to smooth moving silhouettes and high-contrast reflections.
+  It adds no random grain or temporal trails. Paused views still refine through
+  progressive subpixel ray sampling.
 Index of refraction: 1.01 to 2.50, applied live to camera rays and caustics.
 Bevel width: 0 to 0.18, applied on release to every original crystal edge,
 including the hidden edges. This updates the mesh and collision hull, preserving
@@ -165,7 +182,7 @@ caustics on the studio floor and wall.
 Stable crystal optics remains enabled by default. It traces weighted reflection
 and refraction branches deterministically, with bounded branch count and depth,
 plus approximate diffuse indirect lighting. This removes random Fresnel sparkle.
-Fine edges can still alias. The moving photon estimate uses 1,048,576 paths and
+Spatial antialiasing smooths fine edges during motion. The moving photon estimate uses 1,048,576 paths and
 spatial filtering; pause to refine caustics with 33,554,432 photon paths and to
 accumulate additional antialiasing samples. Disable Stable crystal optics under
 Renderer settings to use the stochastic path tracer instead.
@@ -221,6 +238,11 @@ also saves the first matching view as .first.png. --raw disables denoising.
 --walls invisible|paper|stone|metal sets all four side walls.
 --mixed-walls selects paper, stone, metal and invisible on successive sides.
 --glass-walls renders invisible walls, including both end walls, as thin glass.
+--cells sets the number of cells (1-96).
+--shape box|ellipsoid|cylinder|octahedron selects the original solid.
+--size WIDTH HEIGHT DEPTH sets its dimensions before fitting to the cube.
+--black-background removes the floor, backdrop and environment light.
+--no-aa disables the spatial antialiasing pass.
 Put a material preset before its numeric overrides. Capture mode uses defaults
 unless overridden; it does not load saved material preferences.
 Logs are written beside the executable.

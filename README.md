@@ -6,11 +6,12 @@ A native Windows crystal tumbler built with C++20, DirectX 12 hardware ray traci
 
 ## Features
 
-- True 3D Voronoi crystals, with tinted absorption, configurable refraction, and bevels on every edge.
+- 1–96 true 3D Voronoi crystals cut from a box, faceted ellipsoid, cylinder, or octahedron with adjustable width, height, and depth. Tinted absorption, configurable refraction, and bevels on every edge.
 - Live material controls: interior transparency (0–1), shine, reflectance, and crystal, rubber, stone, or paper surface presets with adjustable texture strength.
 - Hardware ray queries for reflection, refraction, internal reflection, and color dispersion; photon paths produce colored caustics on the wall and floor.
 - A rotating metal cube with six collision walls. Its four side walls can independently be invisible, paper, stone, or metal. A checkbox renders invisible walls, including both end walls, as thin glass. Crystals fall, tumble, slide, and collide inside it.
 - Stable crystal optics for motion, plus a stochastic path-tracing mode and progressive still-image refinement.
+- Spatial antialiasing enabled by default, borderless fullscreen, and an optional black environment without the floor or backdrop.
 - Six approximate resonant modes per crystal and per glass wall. Collisions drive short taps; sliding drives irregular micro-impacts.
 - Material presets also adjust contact friction, restitution, and modal sound. All shapes remain rigid, including paper and rubber finishes.
 - Live audio controls for volume, decay, impact/scrape/wall levels, pitch, scrape density, and onset spread. Preferences persist between launches.
@@ -36,7 +37,7 @@ cmake --build build --config Release --parallel
 
 CMake finds DXC in the selected Windows SDK or on `PATH`. If your SDK is installed elsewhere, pass `-DDXC="C:/path/to/dxc.exe"` when configuring. To choose another output folder, pass `-DDELIVERY="C:/path/to/app"`.
 
-Keep all eight `.cso` shader files beside `CrystalSlab.exe`. The build copies the license, dependency notices, and detailed guide there too. Bullet 3.25 and Dear ImGui 1.90.9 are vendored; no dependency download is needed during the build.
+Keep all nine `.cso` shader files beside `CrystalSlab.exe`. The build copies the license, dependency notices, and detailed guide there too. Bullet 3.25 and Dear ImGui 1.90.9 are vendored; no dependency download is needed during the build.
 
 ## Controls
 
@@ -48,15 +49,22 @@ Keep all eight `.cso` shader files beside `CrystalSlab.exe`. The build copies th
 | **Space** | Pause/resume physics and cube rotation |
 | **M** | Mute/unmute |
 | **Tab** | Show/hide controls |
+| **F11** / Fullscreen | Toggle borderless fullscreen on the current monitor; **Esc** returns to the previous window |
 | **F9** | Save a clean PNG beside the executable |
 
-The panel controls cell count, index of refraction, bevel width, cube rotation, optics, and GPU rendering budget. **Audio settings** opens the sound panel. The default decay is approximately 20 ms, and impacts are independently staggered within an 8 ms window to avoid synchronized starts. Audio preferences are stored in `AudioSettings.ini` beside the executable.
+The panel controls cell count (1–96), index of refraction, bevel width, cube rotation, optics, and GPU rendering budget. **Audio settings** opens the sound panel. The default decay is approximately 20 ms, and impacts are independently staggered within an 8 ms window to avoid synchronized starts. Audio preferences are stored in `AudioSettings.ini` beside the executable.
 
 **Materials…** opens the material panel. Choose a surface preset, then independently edit transparency, shine, reflectance, and structure. Transparency 0 gives an opaque tinted solid; 1 gives clear tinted transmission. Lower shine broadens highlights and roughens transmission. Reflectance sets the normal-incidence reflection strength independently of the refraction index. The structure slider controls procedural bump and pigment variation attached to each moving piece.
 
 Set all four side walls together or expand **Set walls individually**. The names refer to their positions before rotation. Material preferences persist in `MaterialSettings.ini`. Changes preserve the current arrangement. Paper and stone panels receive crystal caustics; metal panels reflect the light paths.
 
 Enable **Thin glass on invisible walls** to show the invisible sides and both end walls as clear, 0.035-unit glass panes. They reflect and refract light at IOR 1.5. The checkbox preserves paper/stone/metal finishes, collision boundaries, and sounds; crystals remain clickable through the glass. It is off by default and saved with the material settings.
+
+**Original object…** selects a box, faceted ellipsoid (equal dimensions give a sphere), cylinder with its axis along Y, or octahedron. Width, height, and depth apply on slider release and rebuild the pieces. Oversized dimensions scale together to fit inside a 5.05-unit radius, leaving room for even a single piece to tumble. **Restore original slab** returns to the 8 × 5 × 2.8 box. Object controls, like cell count, are session settings.
+
+**Float in blackness** removes the studio floor, backdrop, and ambient environment from all ray paths while retaining the spotlight. This choice is saved with material preferences. **Antialiasing** is on by default: a spatial edge filter smooths the resolved image before the UI is drawn, without motion history or random jitter. Progressive ray sampling still refines paused views.
+
+Glass panes sit 0.015 units outside the collision boundaries, avoiding coincident crystal and glass surfaces while preserving the pane thickness.
 
 ![Stony pieces inside the cube with metal side walls](docs/materials.png)
 
@@ -66,7 +74,7 @@ Enable **Thin glass on invisible walls** to show the invisible sides and both en
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The tests check Voronoi geometry, rotating-container physics, containment, modal decay, onset spreading, scrape behavior, audio controls, saved settings, peak limiting, material ranges, independently visible walls, and texture coordinates during rotation. They do not need a GPU or an audio output device. The audio test writes a procedural recording to `build/GlassAmbient.wav`.
+The tests check Voronoi geometry, rotating-container physics, containment, modal decay, onset spreading, scrape behavior, audio controls, saved settings, peak limiting, material ranges, independently visible walls, and texture coordinates during rotation. Geometry tests cover all four source shapes at 1, 2, 8, and 96 cells, including oversized objects, slender shapes, the smallest dimensions, wide bevels, and removal of the last cell. Material tests check the glass clearance and removal/restoration of studio geometry. They do not need a GPU or an audio output device. The audio test writes a procedural recording to `build/GlassAmbient.wav`.
 
 To check the actual audio output device as well:
 
@@ -82,7 +90,7 @@ For a rendered still or a live GPU/physics test:
 .\build\app\CrystalSlab.exe --capture "$PWD/stone.png" --material stone --walls metal
 ```
 
-Capture overrides also accept `--transparency`, `--shine`, and `--reflectance` (0–1), `--mixed-walls`, and `--glass-walls`. Put the preset before its overrides. Captures start from default material settings, independent of saved UI preferences.
+Capture overrides also accept `--transparency`, `--shine`, and `--reflectance` (0–1), `--mixed-walls`, and `--glass-walls`. Put the preset before its overrides. Also supported: --cells 1–96, --shape box|ellipsoid|cylinder|octahedron, --size WIDTH HEIGHT DEPTH, --black-background, and --no-aa. Captures start from default material settings, independent of saved UI preferences.
 
 See [the detailed guide](README.txt) for rendering modes, command-line options, implementation notes, and recorded development measurements. The fast optics mode uses bounded ray branching, a fixed three-direction approximation for early rough reflection/refraction lobes, and approximate diffuse indirect light. The stochastic mode samples rough scattering progressively. The audio uses a lightweight modal approximation rather than finite-element acoustics.
 

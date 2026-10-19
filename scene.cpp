@@ -6,7 +6,7 @@
 static btVector3 bt(V3 v){return {v.x,v.y,v.z};}
 static V3 v3(const btVector3&v){return {v.x(),v.y(),v.z()};}
 static void tri(std::vector<Triangle>&out,V3 a,V3 b,V3 c,int mat,int cell=0){
- if(dot(cross(b-a,c-a),cross(b-a,c-a))<1e-14f)return;
+ if(dot(cross(b-a,c-a),cross(b-a,c-a))<1e-24f)return;
  Triangle t;t.a=F4(a);t.b=F4(b);t.c=F4(c);t.n=F4(norm(cross(b-a,c-a)));t.meta={uint32_t(mat),uint32_t(cell),0,0};out.push_back(t);
 }
 static void quad(std::vector<Triangle>&o,V3 a,V3 b,V3 c,V3 d,int m){tri(o,a,b,c,m);tri(o,a,c,d,m);}
@@ -16,8 +16,8 @@ static void box(std::vector<Triangle>&o,V3 lo,V3 hi,int m){
 }
 static bool near(V3 a,V3 b,float e=2e-5f){return dot(a-b,a-b)<e*e;}
 static void unique(std::vector<V3>&p,V3 q){for(auto v:p)if(near(v,q))return;p.push_back(q);}
-static std::vector<Face> block(float depth){
- std::vector<Triangle>t;box(t,{-4,0,-depth*.5f},{4,5,depth*.5f},0);std::vector<Face>f;
+static std::vector<Face> block(float width,float height,float depth){
+ std::vector<Triangle>t;box(t,{-width*.5f,0,-depth*.5f},{width*.5f,height,depth*.5f},0);std::vector<Face>f;
  for(size_t i=0;i<t.size();i+=2){Face a;a.vertices={t[i].a.xyz(),t[i].b.xyz(),t[i].c.xyz(),t[i+1].c.xyz()};a.normal=t[i].n.xyz();a.distance=dot(a.normal,a.vertices[0]);f.push_back(a);}return f;
 }
 // Clip convex polygon faces and retain the neighboring Voronoi cell for bonding.
@@ -32,9 +32,28 @@ static void clip(std::vector<Face>&faces,V3 n,float d,int neighbor=-1){
  }
  if(cap.size()>=3){V3 center{};for(auto p:cap)center=center+p;center=center/float(cap.size());V3 u=norm(cross(std::abs(n.z)<.9f?V3{0,0,1}:V3{0,1,0},n)),v=cross(n,u);
   std::sort(cap.begin(),cap.end(),[&](V3 a,V3 b){a=a-center;b=b-center;return std::atan2(dot(a,v),dot(a,u))<std::atan2(dot(b,v),dot(b,u));});result.push_back({cap,n,d,neighbor});
- }faces=std::move(result);
+ }
+ // Adjacent faces can compute the same intersection in opposite edge order.
+ // Reuse the cap's canonical vertices so tiny bevels cannot leave hairline holes.
+ for(auto&f:result){std::vector<V3>vertices;for(auto p:f.vertices){for(auto q:cap)if(near(p,q)){p=q;break;}unique(vertices,p);}f.vertices=std::move(vertices);}
+ result.erase(std::remove_if(result.begin(),result.end(),[](const Face&f){return f.vertices.size()<3;}),result.end());faces=std::move(result);
 }
 static float faceArea(const Face&f){float area=0;for(size_t k=1;k+1<f.vertices.size();k++){auto c=cross(f.vertices[k]-f.vertices[0],f.vertices[k+1]-f.vertices[0]);area+=std::sqrt(dot(c,c))*.5f;}return area;}
+// Convex source solids share the same plane clipping, bevel and collision path.
+// The ellipsoid uses spherical support planes (a deliberately faceted cut).
+static std::vector<Face> sourceSolid(int shape,float width,float height,float depth){
+ auto faces=block(width,height,depth);V3 center{0,height*.5f,0};
+ auto cut=[&](V3 n,float d){V3 scaled{n.x/(width*.5f),n.y/(height*.5f),n.z/(depth*.5f)};float len=std::sqrt(dot(scaled,scaled));clip(faces,scaled/len,(d+dot(scaled,center))/len);};
+ if(shape==1){
+  // Latitude rings with staggered azimuths, plus exact axial planes. All points
+  // lie on the unit sphere, giving convex tangent facets with bounded extents.
+  for(int ring=1;ring<8;ring++){float latitude=3.141592654f*ring/8;for(int side=0;side<16;side++){float azimuth=6.283185307f*(side+.5f*(ring%2))/16;cut({std::sin(latitude)*std::cos(azimuth),std::cos(latitude),std::sin(latitude)*std::sin(azimuth)},1);}}
+ }else if(shape==2){
+  for(int side=0;side<32;side++){float angle=6.283185307f*side/32;cut({std::cos(angle),0,std::sin(angle)},1);}
+ }else if(shape==3){
+  for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1})cut({float(x),float(y),float(z)},1);
+ }return faces;
+}
 static Material material(V3 c,int type,float rough,float ior=1.5f,float emission=0,V3 absorption={},float dispersion=0){return {F4(c,float(type)),F4(rough,ior,emission,0),F4(absorption,dispersion),F4(type==2?1.f:0.f,type==2?.045f:0.f,0,0)};}
 
 CrystalScene::~CrystalScene(){clearPhysics();}
@@ -71,18 +90,32 @@ void CrystalScene::meshCell(Cell&cell){
  for(size_t i=0;i<faces.size();i++)for(size_t j=i+1;j<faces.size();j++){
   int shared=0;for(auto a:faces[i].vertices)for(auto b:faces[j].vertices)if(near(a,b,8e-5f)){shared++;break;}if(shared<2)continue;
   V3 sum=faces[i].normal+faces[j].normal;float length=std::sqrt(dot(sum,sum));if(length<.01f)continue;
-  float inset=width*std::sqrt(std::max(0.f,(1-dot(faces[i].normal,faces[j].normal))*.5f));cuts.push_back({sum/length,(faces[i].distance+faces[j].distance)/length-inset});
+  V3 n=sum/length;float edgeDistance=(faces[i].distance+faces[j].distance)/length;
+  float inset=width*std::sqrt(std::max(0.f,(1-dot(faces[i].normal,faces[j].normal))*.5f));
+  // Preserve an interior core even for a very thin Voronoi sliver.
+  inset=std::min(inset,std::max(0.f,(edgeDistance-dot(n,cell.center))*.45f));cuts.push_back({n,edgeDistance-inset});
  }
  for(auto cut:cuts)if(width>.0001f)clip(faces,cut.n,cut.d);
  const float shrink=.9975f;
- for(auto&face:faces){V3 c{};for(auto p:face.vertices)c=c+p;c=c/float(face.vertices.size());V3 a=(c-cell.center)*shrink;for(size_t i=0;i<face.vertices.size();i++){V3 b=(face.vertices[i]-cell.center)*shrink,d=(face.vertices[(i+1)%face.vertices.size()]-cell.center)*shrink;unique(cell.hull,b);tri(cell.local,a,b,d,cell.material,cell.id+1);}}
+ for(auto&face:faces){V3 c{};for(auto p:face.vertices)c=c+p;c=c/float(face.vertices.size());V3 a=(c-cell.center)*shrink;for(size_t i=0;i<face.vertices.size();i++){V3 b=(face.vertices[i]-cell.center)*shrink,d=(face.vertices[(i+1)%face.vertices.size()]-cell.center)*shrink;unique(cell.hull,b);size_t first=cell.local.size();tri(cell.local,a,b,d,cell.material,cell.id+1);if(cell.local.size()!=first)cell.local.back().n=F4(face.normal);}}
 }
 void CrystalScene::makeCell(Cell&cell){
  meshCell(cell);auto shape=std::make_unique<btConvexHullShape>();for(auto p:cell.hull)shape->addPoint(bt(p),false);shape->recalcLocalAabb();shape->setMargin(.0008f);
  float mass=cell.volume*2.5f;btVector3 inertia;shape->calculateLocalInertia(mass,inertia);btRigidBody::btRigidBodyConstructionInfo ci(mass,nullptr,shape.get(),inertia);ci.m_friction=.62f;ci.m_restitution=.025f;ci.m_linearDamping=.15f;ci.m_angularDamping=.22f;
- auto body=std::make_unique<btRigidBody>(ci);btTransform tr;tr.setIdentity();tr.setOrigin(bt(cell.center+V3{0,boxCenter.y-1.0f,0}));body->setWorldTransform(tr);body->setSleepingThresholds(.035f,.035f);body->setCcdMotionThreshold(.15f);body->setCcdSweptSphereRadius(.03f);body->setLinearVelocity({cell.center.x*.10f,0,cell.center.z*.24f});body->setUserIndex(cell.id);cell.body=body.get();world->addRigidBody(body.get());shapes.push_back(std::move(shape));bodies.push_back(std::move(body));
+ float actualHeight=height*objectScale,lift=std::min(1.5f,boxHalf-actualHeight*.5f-.10f);
+ auto body=std::make_unique<btRigidBody>(ci);btTransform tr;tr.setIdentity();tr.setOrigin(bt(cell.center+V3{0,boxCenter.y-actualHeight*.5f+lift,0}));body->setWorldTransform(tr);body->setSleepingThresholds(.035f,.035f);body->setCcdMotionThreshold(.15f);body->setCcdSweptSphereRadius(.03f);body->setLinearVelocity({cell.center.x*.10f,0,cell.center.z*.24f});body->setUserIndex(cell.id);cell.body=body.get();world->addRigidBody(body.get());shapes.push_back(std::move(shape));bodies.push_back(std::move(body));
 }
 void CrystalScene::create(uint32_t seed){
+ density=std::clamp(density,1,96);
+ objectShape=std::clamp(objectShape,0,3);
+ auto dimension=[](float v,float fallback){return std::clamp(std::isfinite(v)?v:fallback,.5f,9.8f);};
+ width=dimension(width,8);height=dimension(height,5);depth=dimension(depth,2.8f);
+ auto source=sourceSolid(objectShape,width,height,depth);float radius=0;V3 center{0,height*.5f,0};
+ for(auto&f:source)for(auto p:f.vertices)radius=std::max(radius,std::sqrt(dot(p-center,p-center)));
+ // Keep the entire source inside an inscribed sphere: even the single-cell case
+ // can rotate without presenting an impossible fit to the six-wall constraint.
+ objectScale=std::min(1.f,(boxHalf-.15f)/radius);for(auto&f:source){for(auto&p:f.vertices)p=p*objectScale;f.distance*=objectScale;}
+ objectVolume=0;for(auto&f:source)for(size_t k=1;k+1<f.vertices.size();k++)objectVolume+=dot(f.vertices[0],cross(f.vertices[k],f.vertices[k+1]))/6;
  clearPhysics();cells.clear();bonds.clear();extracted=0;simulating=true;paused=false;simulationTime=0;boxAngle=0;accumulator=0;revision++;soundGeneration++;soundLastHit.fill(-1000);soundLastSeen.fill(-1000);makeStudio();
  configuration=std::make_unique<btDefaultCollisionConfiguration>();dispatcher=std::make_unique<btCollisionDispatcher>(configuration.get());broadphase=std::make_unique<btDbvtBroadphase>();solver=std::make_unique<btSequentialImpulseConstraintSolver>();world=std::make_unique<btDiscreteDynamicsWorld>(dispatcher.get(),broadphase.get(),solver.get(),configuration.get());world->setGravity({0,-9.81f,0});world->getSolverInfo().m_numIterations=35;world->getSolverInfo().m_splitImpulse=true;
  auto wall=[&](V3 center,V3 half){
@@ -92,11 +125,16 @@ void CrystalScene::create(uint32_t seed){
   b->setUserIndex(96+int(boxWalls.size()));world->addRigidBody(b.get());boxWalls.push_back(b.get());wallLocal.push_back(local);shapes.push_back(std::move(shape));bodies.push_back(std::move(b));
  };
  float h=boxHalf,t=.3f;wall({0,-h-t,0},{h+.6f,t,h+.6f});wall({0,h+t,0},{h+.6f,t,h+.6f});wall({-h-t,0,0},{t,h+.6f,h+.6f});wall({h+t,0,0},{t,h+.6f,h+.6f});wall({0,0,-h-t},{h+.6f,h+.6f,t});wall({0,0,h+t},{h+.6f,h+.6f,t});
- std::mt19937 rng(seed);std::uniform_real_distribution<float>random(0,1);std::vector<V3>seeds;float spacing=std::cbrt(40*depth/density)*.61f;
- for(int i=0;i<density;i++){V3 p;for(int k=0;k<1500;k++){p={-3.94f+7.88f*random(rng),.06f+4.88f*random(rng),(-.48f+.96f*random(rng))*depth};bool good=true;for(auto q:seeds)if(dot(p-q,p-q)<spacing*spacing){good=false;break;}if(good||k==1499)break;}seeds.push_back(p);}
+ std::mt19937 rng(seed);std::uniform_real_distribution<float>random(0,1);std::vector<V3>seeds;float spacing=std::cbrt(objectVolume/density)*.61f;
+ for(int i=0;i<density;i++){V3 p;int accepted=0;bool placed=false;for(int k=0;k<100000;k++){
+   p={(-.4925f+.985f*random(rng))*width,(.012f+.976f*random(rng))*height,(-.48f+.96f*random(rng))*depth};p=p*objectScale;
+   bool inside=true;for(auto&f:source)if(dot(f.normal,p)>f.distance-1e-5f){inside=false;break;}if(!inside)continue;
+   bool good=true;for(auto q:seeds)if(dot(p-q,p-q)<spacing*spacing){good=false;break;}
+   if(good||++accepted>=1500){placed=true;break;}
+  }if(!placed)throw std::runtime_error("Could not place Voronoi seeds");seeds.push_back(p);}
  V3 colors[]={{.76f,.98f,.94f},{.94f,.83f,.99f},{.99f,.94f,.72f},{.72f,.94f,.99f},{.99f,.80f,.88f},{.91f,.99f,.79f},{.88f,.91f,.99f}};
  for(int i=0;i<density;i++){
-  Cell c;c.id=i;c.faces=block(depth);auto a=seeds[i];for(int j=0;j<density;j++)if(j!=i){auto b=seeds[j];float len=std::sqrt(dot(b-a,b-a));clip(c.faces,(b-a)/len,(dot(b,b)-dot(a,a))*.5f/len,j);}
+  Cell c;c.id=i;c.faces=source;auto a=seeds[i];for(int j=0;j<density;j++)if(j!=i){auto b=seeds[j];float len=std::sqrt(dot(b-a,b-a));clip(c.faces,(b-a)/len,(dot(b,b)-dot(a,a))*.5f/len,j);}
   // Signed tetrahedra give the mass centroid and volume of each closed polyhedron.
   V3 moment{};float volume=0;for(auto&f:c.faces)for(size_t k=1;k+1<f.vertices.size();k++){V3 p=f.vertices[0],q=f.vertices[k],r=f.vertices[k+1];float v=dot(p-a,cross(q-a,r-a))/6;volume+=v;moment=moment+(a+p+q+r)*(v*.25f);}if(volume<1e-5f)throw std::runtime_error("Degenerate Voronoi volume");c.volume=volume;c.center=moment/volume;
   V3 col=colors[rng()%7],sigma{-std::log(col.x)*1.25f,-std::log(col.y)*1.25f,-std::log(col.z)*1.25f};c.tint=col;c.material=int(materials.size());materials.push_back(material(col,2,0,ior,0,sigma,.009f));makeCell(c);cells.push_back(std::move(c));
@@ -123,14 +161,15 @@ void CrystalScene::updateMaterials(){
   if(style){m.surface={0,style==1?.025f:.04f,float(style==1?3:style==2?2:4),.8f};m.params.w=float(10+i);}
   boxWalls[i]->setFriction(wallFriction[style]);boxWalls[i]->setRestitution(wallBounce[style]);
   if(!style&&!appearance.glassWalls)continue;
-  // Closed thin panes extend outwards from the existing collision plane.
-  float t=style?.10f:.035f;
-  if(i==0)box(panelTriangles,{-h,-h-t,-h},{h,-h,h},wallMaterials[i]);
-  if(i==1)box(panelTriangles,{-h,h,-h},{h,h+t,h},wallMaterials[i]);
-  if(i==2)box(panelTriangles,{-h-t,-h,-h},{-h,h,h},wallMaterials[i]);
-  if(i==3)box(panelTriangles,{h,-h,-h},{h+t,h,h},wallMaterials[i]);
-  if(i==4)box(panelTriangles,{-h,-h,-h-t},{h,h,-h},wallMaterials[i]);
-  if(i==5)box(panelTriangles,{-h,-h,h},{h,h,h+t},wallMaterials[i]);
+  // Keep a small air gap outside the constraint so flat crystal faces never
+  // coincide with a glass interface, even at full contact with the boundary.
+  float t=style?.10f:.035f,p=h+(style?0:GlassWallGap);
+  if(i==0)box(panelTriangles,{-h,-p-t,-h},{h,-p,h},wallMaterials[i]);
+  if(i==1)box(panelTriangles,{-h,p,-h},{h,p+t,h},wallMaterials[i]);
+  if(i==2)box(panelTriangles,{-p-t,-h,-h},{-p,h,h},wallMaterials[i]);
+  if(i==3)box(panelTriangles,{p,-h,-h},{p+t,h,h},wallMaterials[i]);
+  if(i==4)box(panelTriangles,{-h,-h,-p-t},{h,h,-p},wallMaterials[i]);
+  if(i==5)box(panelTriangles,{-h,-h,p},{h,h,p+t},wallMaterials[i]);
  }
  // Refresh cached contact friction without moving the existing bodies.
  if(world)for(auto&body:bodies)if(body->getBroadphaseHandle())world->getBroadphase()->getOverlappingPairCache()->cleanProxyFromPairs(body->getBroadphaseHandle(),dispatcher.get());
@@ -147,7 +186,8 @@ void CrystalScene::updateBox(float dt){
 void CrystalScene::rebuild(){
  auto coordinates=[&](Material&m,const btTransform&pose){auto inverse=pose.inverse();auto b=inverse.getBasis();auto o=inverse.getOrigin();m.localX={b[0].x(),b[0].y(),b[0].z(),o.x()};m.localY={b[1].x(),b[1].y(),b[1].z(),o.y()};m.localZ={b[2].x(),b[2].y(),b[2].z(),o.z()};};
  for(int id:wallMaterials)coordinates(materials[id],boxTransform());
- triangles=staticTriangles;auto append=[&](const std::vector<Triangle>&mesh,const btTransform&t){for(auto a:mesh){a.a=F4(v3(t*bt(a.a.xyz())));a.b=F4(v3(t*bt(a.b.xyz())));a.c=F4(v3(t*bt(a.c.xyz())));a.n=F4(v3(t.getBasis()*bt(a.n.xyz())));triangles.push_back(a);}};
+ triangles.clear();for(auto&t:staticTriangles)if(!appearance.blackBackground||(t.meta.x!=0&&t.meta.x!=3))triangles.push_back(t);
+ auto append=[&](const std::vector<Triangle>&mesh,const btTransform&t){for(auto a:mesh){a.a=F4(v3(t*bt(a.a.xyz())));a.b=F4(v3(t*bt(a.b.xyz())));a.c=F4(v3(t*bt(a.c.xyz())));a.n=F4(v3(t.getBasis()*bt(a.n.xyz())));triangles.push_back(a);}};
  append(frameTriangles,boxTransform());append(panelTriangles,boxTransform());for(auto&c:cells)if(!c.removed){coordinates(materials[c.material],c.body->getWorldTransform());append(c.local,c.body->getWorldTransform());}
 }
 bool CrystalScene::moving()const{if(!simulating||paused)return false;if(std::abs(rotationSpeed)>.00001f)return true;for(auto&c:cells)if(!c.removed&&c.body->isActive())return true;return false;}
@@ -192,5 +232,5 @@ float CrystalScene::cohesion()const{if(bonds.empty())return 1;int alive=0;for(au
 bool CrystalScene::boundsValid(float e)const{auto inverse=boxTransform().inverse();for(auto&c:cells)if(!c.removed)for(auto p:c.hull){auto q=v3(inverse*c.body->getWorldTransform()*bt(p));if(std::abs(q.x)>boxHalf+e||std::abs(q.y)>boxHalf+e||std::abs(q.z)>boxHalf+e)return false;}return true;}
 bool CrystalScene::geometryValid()const{
  float volume=0;for(auto&c:cells){volume+=c.volume;if(c.local.empty()||c.hull.size()<4)return false;float meshVolume=0;for(auto&t:c.local){if(!std::isfinite(t.n.x)||dot(t.n.xyz(),t.a.xyz())< -1e-4f)return false;meshVolume+=dot(t.a.xyz(),cross(t.b.xyz(),t.c.xyz()))/6;}if(meshVolume<=0||meshVolume>c.volume*1.001f)return false;for(auto&f:c.faces)for(auto p:c.hull)if(dot(f.normal,p+c.center)>f.distance+.001f)return false;
- }return std::abs(volume-40*depth)<.01f&&boundsValid();
+ }return std::abs(volume-objectVolume)<std::max(.001f,objectVolume*.0001f)&&boundsValid();
 }

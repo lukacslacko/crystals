@@ -14,7 +14,7 @@ struct V2 { float x=0,y=0; V2 operator+(V2 b)const{return{x+b.x,y+b.y};} V2 oper
 struct V3 { float x=0,y=0,z=0; V3 operator+(V3 b)const{return{x+b.x,y+b.y,z+b.z};} V3 operator-(V3 b)const{return{x-b.x,y-b.y,z-b.z};} V3 operator*(float s)const{return{x*s,y*s,z*s};} V3 operator/(float s)const{return{x/s,y/s,z/s};} };
 inline float dot(V3 a,V3 b){return a.x*b.x+a.y*b.y+a.z*b.z;}
 inline V3 cross(V3 a,V3 b){return{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
-inline V3 norm(V3 a){return a/std::max(.000001f,std::sqrt(dot(a,a)));}
+inline V3 norm(V3 a){return a/std::max(1e-20f,std::sqrt(dot(a,a)));}
 struct F4 {float x=0,y=0,z=0,w=0; F4()=default;F4(float a,float b,float c,float d=0):x(a),y(b),z(c),w(d){} F4(V3 v,float d=0):x(v.x),y(v.y),z(v.z),w(d){} V3 xyz()const{return{x,y,z};}};
 struct U4 {uint32_t x=0,y=0,z=0,w=0;};
 struct Triangle {F4 a,b,c,n;U4 meta;};
@@ -31,13 +31,14 @@ struct Camera {
 };
 class CrystalScene {
 public:
+ static constexpr float GlassWallGap=.015f;
  std::vector<Triangle> triangles,staticTriangles,frameTriangles,panelTriangles;std::vector<Material> materials;std::vector<Cell> cells;std::vector<Bond>bonds;std::vector<SpotLight> lights;
  MaterialSettings appearance;std::array<int,6>wallMaterials{};
  std::unique_ptr<btDefaultCollisionConfiguration> configuration;
  std::unique_ptr<btCollisionDispatcher> dispatcher;std::unique_ptr<btDbvtBroadphase> broadphase;
  std::unique_ptr<btSequentialImpulseConstraintSolver> solver;std::unique_ptr<btDiscreteDynamicsWorld> world;
  std::vector<std::unique_ptr<btCollisionShape>> shapes;std::vector<std::unique_ptr<btRigidBody>> bodies;std::vector<std::unique_ptr<btTypedConstraint>> constraints;
- int density=56,extracted=0;float strength=.55f,ior=1.54f,bevel=.075f,depth=2.8f;bool simulating=false,paused=false;float simulationTime=0;uint32_t revision=0;
+ int density=56,extracted=0,objectShape=0;float strength=.55f,ior=1.54f,bevel=.075f,width=8,height=5,depth=2.8f,objectVolume=0,objectScale=1;bool simulating=false,paused=false;float simulationTime=0;uint32_t revision=0;
  float boxHalf=5.2f,boxAngle=0,rotationSpeed=4;V3 boxCenter{0,7.5f,0};std::vector<btRigidBody*>boxWalls;std::vector<btTransform>wallLocal;
  uint32_t soundGeneration=0;std::function<void(const SoundFrame&)>soundSink;
  btTransform boxTransform()const;void updateBox(float dt);void updateMaterials();

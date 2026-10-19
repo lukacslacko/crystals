@@ -42,7 +42,7 @@ find_program(DXC NAMES dxc.exe HINTS
   "$ENV{WindowsSdkDir}/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64"
   "C:/Program Files (x86)/Windows Kits/10/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64"
   DOC "DirectX Shader Compiler (DXC) from the Windows SDK" REQUIRED)
-foreach(ENTRY PathTrace Resolve ClearPhotons PhotonTrace PhotonHorizontal PhotonVertical Temporal Spatial)
+foreach(ENTRY PathTrace Resolve Antialias ClearPhotons PhotonTrace PhotonHorizontal PhotonVertical Temporal Spatial)
   add_custom_command(OUTPUT "${DELIVERY}/${ENTRY}.cso"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${DELIVERY}"
     COMMAND "${DXC}" -T cs_6_5 -E ${ENTRY} -O3 -Fo "${DELIVERY}/${ENTRY}.cso" "${CMAKE_CURRENT_SOURCE_DIR}/pathtrace.hlsl"

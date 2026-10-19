@@ -20,11 +20,12 @@ MaterialSettings loadMaterialSettings(const std::filesystem::path&path){
  while(std::getline(in,line)){std::istringstream row(line);std::string key;float v;if(!(row>>key>>v)||!std::isfinite(v))continue;
   if(key=="finish")s.finish=int(std::clamp(v,0.f,3.f));else if(key=="transparency")s.transparency=v;else if(key=="shine")s.shine=v;else if(key=="reflectance")s.reflectance=v;else if(key=="structure")s.structure=v;
   else if(key=="glass_walls")s.glassWalls=v!=0;
+  else if(key=="black_background")s.blackBackground=v!=0;
   else for(int i=0;i<4;i++)if(key=="wall_"+std::to_string(i))s.walls[i]=int(std::clamp(v,0.f,3.f));
  }return sanitizeMaterialSettings(s);
 }
 bool saveMaterialSettings(const std::filesystem::path&path,const MaterialSettings&input){
  auto s=sanitizeMaterialSettings(input);std::ofstream out(path);if(!out)return false;
  out<<std::setprecision(9)<<"finish "<<s.finish<<"\ntransparency "<<s.transparency<<"\nshine "<<s.shine<<"\nreflectance "<<s.reflectance<<"\nstructure "<<s.structure<<"\n";
- for(int i=0;i<4;i++)out<<"wall_"<<i<<" "<<s.walls[i]<<"\n";out<<"glass_walls "<<s.glassWalls<<"\n";return bool(out);
+ for(int i=0;i<4;i++)out<<"wall_"<<i<<" "<<s.walls[i]<<"\n";out<<"glass_walls "<<s.glassWalls<<"\nblack_background "<<s.blackBackground<<"\n";return bool(out);
 }

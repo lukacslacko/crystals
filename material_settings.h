@@ -9,6 +9,7 @@ struct MaterialSettings {
  float transparency=1,shine=1,reflectance=.045f,structure=.65f;
  std::array<int,4>walls{}; // -Y, +Y, -X, +X; the Z end walls use the invisible finish.
  bool glassWalls=false;
+ bool blackBackground=false;
  bool operator==(const MaterialSettings&)const=default;
  void preset(int index);
 };

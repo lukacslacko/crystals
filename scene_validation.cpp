@@ -7,11 +7,28 @@
 static void require(bool condition,const char*message){if(!condition)throw std::runtime_error(message);}
 static void manifold(const Cell&c){
  using Edge=std::pair<int,int>;std::map<Edge,int>edges;std::vector<V3>vertices;
- auto point=[&](F4 p){for(int i=0;i<int(vertices.size());i++)if(dot(vertices[i]-p.xyz(),vertices[i]-p.xyz())<1e-8f)return i;vertices.push_back(p.xyz());return int(vertices.size())-1;};
+ auto point=[&](F4 p){for(int i=0;i<int(vertices.size());i++)if(dot(vertices[i]-p.xyz(),vertices[i]-p.xyz())<1e-10f)return i;vertices.push_back(p.xyz());return int(vertices.size())-1;};
  for(auto&t:c.local){int p[]={point(t.a),point(t.b),point(t.c)};if(p[0]==p[1]||p[1]==p[2]||p[0]==p[2])continue;for(int i=0;i<3;i++){auto a=p[i],b=p[(i+1)%3];if(a>b)std::swap(a,b);edges[{a,b}]++;}}
- for(auto&[edge,count]:edges)if(count!=2){std::cerr<<"Cell "<<c.id<<", edge "<<edge.first<<","<<edge.second<<", incidence "<<count<<"\n";require(false,"A beveled crystal is not a closed manifold");}
+ for(auto&[edge,count]:edges)if(count!=2){std::cerr<<"Cell "<<c.id<<", edge "<<edge.first<<","<<edge.second<<", incidence "<<count<<"\n";for(auto&[e,n]:edges)if(n!=2){auto a=vertices[e.first],b=vertices[e.second];std::cerr<<n<<": ("<<a.x<<","<<a.y<<","<<a.z<<") - ("<<b.x<<","<<b.y<<","<<b.z<<")\n";}require(false,"A beveled crystal is not a closed manifold");}
 }
 int main(){try{
+ for(int shape=0;shape<4;shape++)for(int count:{1,2,8,96}){
+  CrystalScene s;s.objectShape=shape;s.density=count;
+  if(count==2){s.width=9.8f;s.height=9.8f;s.depth=9.8f;} // Fit a deliberately oversized object.
+  if(count==8){s.width=2;s.height=8;s.depth=1;} // Tall, thin fragments.
+  if(count==96){s.width=.5f;s.height=.5f;s.depth=.5f;s.bevel=.18f;} // Many small cells and a wide bevel.
+  s.create(73192+count);require(s.cells.size()==count,"Requested cell count was not created");
+  if(!s.geometryValid()){float total=0;for(auto&c:s.cells){total+=c.volume;float mesh=0,minPlane=1e9f,outside=0;for(auto&t:c.local){mesh+=dot(t.a.xyz(),cross(t.b.xyz(),t.c.xyz()))/6;minPlane=std::min(minPlane,dot(t.n.xyz(),t.a.xyz()));}for(auto&f:c.faces)for(auto p:c.hull)outside=std::max(outside,dot(f.normal,p+c.center)-f.distance);if(mesh<=0||mesh>c.volume*1.001f||minPlane< -1e-4f||outside>.001f)std::cerr<<"Invalid cell "<<c.id<<": volume "<<c.volume<<", mesh "<<mesh<<", plane "<<minPlane<<", outside "<<outside<<"\n";}std::cerr<<"Total volume "<<total<<" / "<<s.objectVolume<<"; bounds "<<s.boundsValid()<<"\n";}
+  require(s.geometryValid(),"Source shape / Voronoi volume failed");
+  for(auto&c:s.cells)manifold(c);
+  if(shape==0)require(std::abs(s.objectVolume-s.width*s.height*s.depth*std::pow(s.objectScale,3))<.001f,"Box dimensions were not applied");
+  if(shape==3)require(std::abs(s.objectVolume-s.width*s.height*s.depth*std::pow(s.objectScale,3)/6)<.001f,"Octahedron dimensions were not applied");
+  float initialY=s.cells[0].body->getWorldTransform().getOrigin().y();
+  int frames=count==1?12000:count==2?1800:240;
+  for(int frame=0;frame<frames;frame++){s.step(1.f/120);require(s.boundsValid(.003f),"Containment failed for source shape / low cell count");if(count==1&&frame==120)require(s.cells[0].body->getWorldTransform().getOrigin().y()<initialY-.1f,"Single crystal did not fall");}
+  if(count==1){require(s.extract(0)&&s.extracted==1,"Could not extract the final crystal");s.step(.02f);require(s.boundsValid(),"Empty cube containment failed");}
+  std::cout<<"Shape "<<shape<<", cells "<<count<<": PASS; volume "<<s.objectVolume<<"; seconds "<<frames/120<<"\n";
+ }
  for(int test=0;test<4;test++){
   CrystalScene s;s.density=test==3?96:56;s.bevel=test==0?0:test==1?.075f:.18f;s.create(73192+test);require(s.geometryValid(),"Voronoi volume/orientation validation failed");for(auto&c:s.cells)manifold(c);
   float zmin=10,zmax=-10;for(auto&c:s.cells){zmin=std::min(zmin,c.center.z);zmax=std::max(zmax,c.center.z);}require(zmax-zmin>1,"Seeds are not volumetric");
