@@ -9,7 +9,7 @@ A native Windows crystal tumbler built with C++20, DirectX 12 hardware ray traci
 - True 3D Voronoi crystals, with tinted absorption, configurable refraction, and bevels on every edge.
 - Live material controls: interior transparency (0–1), shine, reflectance, and crystal, rubber, stone, or paper surface presets with adjustable texture strength.
 - Hardware ray queries for reflection, refraction, internal reflection, and color dispersion; photon paths produce colored caustics on the wall and floor.
-- A rotating metal cube with six collision walls. Its four side walls can independently be invisible, paper, stone, or metal; the two end walls stay invisible. Crystals fall, tumble, slide, and collide inside it.
+- A rotating metal cube with six collision walls. Its four side walls can independently be invisible, paper, stone, or metal. A checkbox renders invisible walls, including both end walls, as thin glass. Crystals fall, tumble, slide, and collide inside it.
 - Stable crystal optics for motion, plus a stochastic path-tracing mode and progressive still-image refinement.
 - Six approximate resonant modes per crystal and per glass wall. Collisions drive short taps; sliding drives irregular micro-impacts.
 - Material presets also adjust contact friction, restitution, and modal sound. All shapes remain rigid, including paper and rubber finishes.
@@ -56,6 +56,8 @@ The panel controls cell count, index of refraction, bevel width, cube rotation, 
 
 Set all four side walls together or expand **Set walls individually**. The names refer to their positions before rotation. Material preferences persist in `MaterialSettings.ini`. Changes preserve the current arrangement. Paper and stone panels receive crystal caustics; metal panels reflect the light paths.
 
+Enable **Thin glass on invisible walls** to show the invisible sides and both end walls as clear, 0.035-unit glass panes. They reflect and refract light at IOR 1.5. The checkbox preserves paper/stone/metal finishes, collision boundaries, and sounds; crystals remain clickable through the glass. It is off by default and saved with the material settings.
+
 ![Stony pieces inside the cube with metal side walls](docs/materials.png)
 
 ## Validation
@@ -80,7 +82,7 @@ For a rendered still or a live GPU/physics test:
 .\build\app\CrystalSlab.exe --capture "$PWD/stone.png" --material stone --walls metal
 ```
 
-Capture overrides also accept `--transparency`, `--shine`, and `--reflectance` (0–1), and `--mixed-walls`. Put the preset before its overrides. Captures start from default material settings, independent of saved UI preferences.
+Capture overrides also accept `--transparency`, `--shine`, and `--reflectance` (0–1), `--mixed-walls`, and `--glass-walls`. Put the preset before its overrides. Captures start from default material settings, independent of saved UI preferences.
 
 See [the detailed guide](README.txt) for rendering modes, command-line options, implementation notes, and recorded development measurements. The fast optics mode uses bounded ray branching, a fixed three-direction approximation for early rough reflection/refraction lobes, and approximate diffuse indirect light. The stochastic mode samples rough scattering progressively. The audio uses a lightweight modal approximation rather than finite-element acoustics.
 

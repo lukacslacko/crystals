@@ -58,7 +58,19 @@ bool intersect(float3 o,float3 d,float maximum,out uint primitive,out float dist
  if(query.CommittedStatus()==COMMITTED_TRIANGLE_HIT){primitive=query.CommittedPrimitiveIndex();distance=query.CommittedRayT();return true;}
  primitive=0;distance=maximum;return false;
 }
-float visibility(float3 o,float3 d,float maximum){uint primitive;float t;return intersect(o,d,maximum,primitive,t)?0:1;}
+bool glassWall(Material m){return m.params.w>=20&&m.params.w<26;}
+float3 visibility(float3 o,float3 d,float maximum){
+ // Thin parallel panes transmit a straight shadow connection with Fresnel loss.
+ // Camera and photon rays still trace both refracting faces of the actual solid.
+ float3 transmission=1;int medium=-1;
+ [loop]for(int step=0;step<24;step++){
+  uint primitive;float t;if(!intersect(o,d,maximum,primitive,t))return transmission;
+  if(medium>=0)transmission*=attenuation(Materials[medium],t);
+  Surface hit=Triangles[primitive];Material m=Materials[hit.meta.x];if(!glassWall(m))return 0;
+  float cosine=abs(dot(d,hit.n.xyz));transmission*=1-fresnelSurface(m,cosine);
+  medium=dot(d,hit.n.xyz)<0?int(hit.meta.x):-1;o+=d*(t+.0005);maximum-=t+.0005;if(maximum<=0)return transmission;
+ }return 0;
+}
 float3 environment(float3 d){return lerp(float3(.004,.006,.011),float3(.025,.033,.05),smoothstep(-.15,.8,d.y));}
 bool receiverUV(float3 p,uint material,out float2 pixel,out float area){
  if(material==3){pixel=float2((p.x+12)/24*2048,(p.y+.58)/22*1024);area=528.0/(2048*1024);return all(pixel>=0)&&pixel.x<2047&&pixel.y<1023;}
@@ -108,9 +120,9 @@ void deposit(float3 p,uint material,float3 flux){
   bool entering=dot(d,hit.n.xyz)<0;float3 n=entering?hit.n.xyz:-hit.n.xyz;int kind=int(m.colorType.w);
   float3 geometric=n;surfaceDetail(m,p,geometric,n);
   if(kind==2){float ior=m.params.y+(channel==0?-1:channel==2?1:0)*m.absorption.w;float3 tr=refract(d,n,entering?1/ior:ior);float fr=fresnelSurface(m,-dot(d,n));if(dot(tr,tr)<.01)fr=1;float choice=rnd(seed);
-   if(choice<fr)d=roughDirection(reflect(d,n),geometric,m.params.x,float2(rnd(seed),rnd(seed)));
-   else if(choice<fr+(1-fr)*m.surface.x){d=roughDirection(normalize(tr),-geometric,m.params.x,float2(rnd(seed),rnd(seed)));medium=entering?int(hit.meta.x):-1;}
-   else return;touchedCrystal=true;
+   if(choice<fr){d=roughDirection(reflect(d,n),geometric,m.params.x,float2(rnd(seed),rnd(seed)));touchedCrystal=true;}
+   else if(choice<fr+(1-fr)*m.surface.x){d=roughDirection(normalize(tr),-geometric,m.params.x,float2(rnd(seed),rnd(seed)));medium=entering?int(hit.meta.x):-1;touchedCrystal=touchedCrystal||!glassWall(m);}
+   else return;
   }
   else if(kind==1){d=roughDirection(reflect(d,n),geometric,m.params.x,float2(rnd(seed),rnd(seed)));flux*=m.colorType.xyz;}
   else{if(kind==0&&touchedCrystal)deposit(p,hit.meta.x,flux);return;}
@@ -225,8 +237,14 @@ float3 path(float3 o,float3 d,inout uint seed,int channel){
   if(Options.z!=0)c*=channel==0?float3(3,0,0):channel==1?float3(0,3,0):float3(0,0,3);result+=c;
  }
  Accumulation[id.xy]=float4((Counts.z==0?0:Accumulation[id.xy].xyz)+result,1);
- float3 d=primaryRay(float2(id.xy)+.5);uint primitive;float distance;
- if(intersect(CameraOrigin.xyz,d,300,primitive,distance)){float3 n=Triangles[primitive].n.xyz;if(dot(n,d)>0)n=-n;Guide[id.xy]=float4(n,distance);}else Guide[id.xy]=float4(0,0,0,300);
+ float3 d=primaryRay(float2(id.xy)+.5),origin=CameraOrigin.xyz;float travelled=0;Guide[id.xy]=float4(0,0,0,300);
+ // Guide denoising by the objects seen through the panes, rather than smoothing
+ // the entire view as if the front window were one opaque flat surface.
+ [loop]for(int step=0;step<24;step++){
+  uint primitive;float distance;if(!intersect(origin,d,300-travelled,primitive,distance))break;Surface hit=Triangles[primitive];
+  if(!glassWall(Materials[hit.meta.x])){float3 n=hit.n.xyz;if(dot(n,d)>0)n=-n;Guide[id.xy]=float4(n,travelled+distance);break;}
+  travelled+=distance+.0005;if(travelled>=300)break;origin+=d*(distance+.0005);
+ }
 }
 [numthreads(8,8,1)]void Temporal(uint3 id:SV_DispatchThreadID){
  if(id.x>=Counts.x||id.y>=Counts.y)return;float samples=max(1,float(Counts.z+Counts.w));float3 current=Accumulation[id.xy].xyz/samples;float historyCount=samples;

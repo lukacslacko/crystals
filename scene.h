@@ -32,7 +32,7 @@ struct Camera {
 class CrystalScene {
 public:
  std::vector<Triangle> triangles,staticTriangles,frameTriangles,panelTriangles;std::vector<Material> materials;std::vector<Cell> cells;std::vector<Bond>bonds;std::vector<SpotLight> lights;
- MaterialSettings appearance;std::array<int,4>wallMaterials{};
+ MaterialSettings appearance;std::array<int,6>wallMaterials{};
  std::unique_ptr<btDefaultCollisionConfiguration> configuration;
  std::unique_ptr<btCollisionDispatcher> dispatcher;std::unique_ptr<btDbvtBroadphase> broadphase;
  std::unique_ptr<btSequentialImpulseConstraintSolver> solver;std::unique_ptr<btDiscreteDynamicsWorld> world;

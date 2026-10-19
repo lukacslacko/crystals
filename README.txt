@@ -9,7 +9,8 @@ The container is a 10.4 x 10.4 x 10.4 cube, larger than the original 8 x 5 x 2.8
 crystal slab. Twelve chamfered polished-metal rails and eight champagne-metal
 corner blocks define its outline. Six rigid faces contain the pieces; by default
 they are invisible. The four side walls can also be paper, stone or metal.
-The two end walls stay invisible. The studio wall and floor stay stationary.
+The two end walls use the invisible finish. A checkbox can show all invisible
+walls as thin glass. The studio wall and floor stay stationary.
 
 The original 3D Voronoi crystal arrangement is released into this larger volume
 as independent rigid bodies. Gravity makes the crystals fall, collide and scatter.
@@ -42,6 +43,14 @@ approximate modal tuning/damping too. Rubber and paper are still rigid bodies.
 
 The four walls parallel to the rotation axis can be Invisible, Paper, Stone or
 Metal, together or individually. Their names refer to their starting positions.
+Enable "Thin glass on invisible walls" to render every invisible side plus both
+end walls as clear glass panes. They are closed solids, 0.035 units thick, with
+IOR 1.5, Fresnel reflections and slight green edge absorption. Camera and photon
+rays refract through both faces. Direct shadow connections approximate straight
+transmission through the thin parallel faces, including Fresnel and absorption
+loss. Crystals remain clickable through the glass. This display option preserves
+the collision boundaries, current poses, sounds and other wall finishes. It is
+off by default and saved with the other material preferences.
 Paper and stone receive crystal caustics; metal reflects light paths. Opaque walls
 block picking of hidden crystals. Collision boundaries remain on all six sides.
 Wall finishes also change friction and contact sound; invisible walls sound like
@@ -211,6 +220,7 @@ also saves the first matching view as .first.png. --raw disables denoising.
 --transparency, --shine and --reflectance accept values from 0 to 1.
 --walls invisible|paper|stone|metal sets all four side walls.
 --mixed-walls selects paper, stone, metal and invisible on successive sides.
+--glass-walls renders invisible walls, including both end walls, as thin glass.
 Put a material preset before its numeric overrides. Capture mode uses defaults
 unless overridden; it does not load saved material preferences.
 Logs are written beside the executable.
