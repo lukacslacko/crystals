@@ -35,7 +35,7 @@ static void clip(std::vector<Face>&faces,V3 n,float d,int neighbor=-1){
  }faces=std::move(result);
 }
 static float faceArea(const Face&f){float area=0;for(size_t k=1;k+1<f.vertices.size();k++){auto c=cross(f.vertices[k]-f.vertices[0],f.vertices[k+1]-f.vertices[0]);area+=std::sqrt(dot(c,c))*.5f;}return area;}
-static Material material(V3 c,int type,float rough,float ior=1.5f,float emission=0,V3 absorption={},float dispersion=0){return {F4(c,float(type)),F4(rough,ior,emission,0),F4(absorption,dispersion)};}
+static Material material(V3 c,int type,float rough,float ior=1.5f,float emission=0,V3 absorption={},float dispersion=0){return {F4(c,float(type)),F4(rough,ior,emission,0),F4(absorption,dispersion),F4(type==2?1.f:0.f,type==2?.045f:0.f,0,0)};}
 
 CrystalScene::~CrystalScene(){clearPhysics();}
 void CrystalScene::clearPhysics(){if(world){for(int i=world->getNumConstraints()-1;i>=0;i--)world->removeConstraint(world->getConstraint(i));for(int i=world->getNumCollisionObjects()-1;i>=0;i--)world->removeCollisionObject(world->getCollisionObjectArray()[i]);}boxWalls.clear();wallLocal.clear();constraints.clear();bodies.clear();shapes.clear();world.reset();solver.reset();broadphase.reset();dispatcher.reset();configuration.reset();}
@@ -62,6 +62,7 @@ void CrystalScene::makeStudio(){
  for(int x=-1;x<=1;x+=2)for(int y=-1;y<=1;y+=2)for(int z=-1;z<=1;z+=2){V3 p{h*x,h*y,h*z};metalBox(p-V3{.20f,.20f,.20f},p+V3{.20f,.20f,.20f},.07f,1);}
  V3 p{0,17.5f,14.5f},direction=norm(V3{0,6.5f,0}-p),intensity{6400,5900,5100};float radius=.055f;V3 u=norm(cross({0,1,0},direction))*radius,v=norm(cross(direction,u))*radius;
  int mat=int(materials.size());auto lamp=material(intensity/(4*radius*radius),3,0,1,1);lamp.params.w=1;materials.push_back(lamp);quad(staticTriangles,p-u-v,p+u-v,p+u+v,p-u+v,mat);lights.push_back({p,direction,intensity,std::cos(24*.0174532925f),std::cos(34*.0174532925f),radius});
+ for(int i=0;i<4;i++){wallMaterials[i]=int(materials.size());materials.push_back(material({.8f,.8f,.8f},0,.8f));}
 }
 void CrystalScene::meshCell(Cell&cell){
  auto faces=cell.faces;cell.local.clear();cell.hull.clear();struct Cut{V3 n;float d;};std::vector<Cut>cuts;
@@ -98,12 +99,38 @@ void CrystalScene::create(uint32_t seed){
   Cell c;c.id=i;c.faces=block(depth);auto a=seeds[i];for(int j=0;j<density;j++)if(j!=i){auto b=seeds[j];float len=std::sqrt(dot(b-a,b-a));clip(c.faces,(b-a)/len,(dot(b,b)-dot(a,a))*.5f/len,j);}
   // Signed tetrahedra give the mass centroid and volume of each closed polyhedron.
   V3 moment{};float volume=0;for(auto&f:c.faces)for(size_t k=1;k+1<f.vertices.size();k++){V3 p=f.vertices[0],q=f.vertices[k],r=f.vertices[k+1];float v=dot(p-a,cross(q-a,r-a))/6;volume+=v;moment=moment+(a+p+q+r)*(v*.25f);}if(volume<1e-5f)throw std::runtime_error("Degenerate Voronoi volume");c.volume=volume;c.center=moment/volume;
-  V3 col=colors[rng()%7],sigma{-std::log(col.x)*1.25f,-std::log(col.y)*1.25f,-std::log(col.z)*1.25f};c.material=int(materials.size());materials.push_back(material({1,1,1},2,0,ior,0,sigma,.009f));makeCell(c);cells.push_back(std::move(c));
+  V3 col=colors[rng()%7],sigma{-std::log(col.x)*1.25f,-std::log(col.y)*1.25f,-std::log(col.z)*1.25f};c.tint=col;c.material=int(materials.size());materials.push_back(material(col,2,0,ior,0,sigma,.009f));makeCell(c);cells.push_back(std::move(c));
  }
  // Cells are released independently into the larger container; no weld bonds.
- rebuild();
+ updateMaterials();
 }
-void CrystalScene::updateOptics(){for(auto&c:cells)materials[c.material].params.y=ior;}
+void CrystalScene::updateOptics(){updateMaterials();}
+void CrystalScene::updateMaterials(){
+ appearance=sanitizeMaterialSettings(appearance);
+ const float friction[]={.62f,.95f,.80f,.55f},bounce[]={.025f,.12f,.018f,.008f};
+ const float pigment[]={.20f,.12f,.16f,.27f};
+ for(auto&c:cells){auto&m=materials[c.material];V3 color{std::pow(c.tint.x,6.f),std::pow(c.tint.y,6.f),std::pow(c.tint.z,6.f)};m.colorType=F4(color*pigment[appearance.finish],2);m.params.x=1-appearance.shine;m.params.y=ior;
+  m.surface={appearance.transparency,appearance.reflectance,float(appearance.finish),appearance.structure};
+  c.body->setFriction(friction[appearance.finish]);c.body->setRestitution(bounce[appearance.finish]);
+ }
+ panelTriangles.clear();float h=boxHalf,t=.10f;
+ const float wallFriction[]={.62f,.55f,.85f,.32f},wallBounce[]={.04f,.008f,.018f,.05f};
+ for(int i=0;i<4;i++){int style=appearance.walls[i];auto&m=materials[wallMaterials[i]];
+  if(style==1)m=material({.80f,.75f,.63f},0,.92f);
+  else if(style==2)m=material({.32f,.37f,.40f},0,.84f);
+  else m=material({.72f,.76f,.81f},1,.23f);
+  m.surface={0,style==1?.025f:.04f,float(style==1?3:style==2?2:4),.8f};m.params.w=float(10+i);
+  boxWalls[i]->setFriction(wallFriction[style]);boxWalls[i]->setRestitution(wallBounce[style]);
+  if(!style)continue;
+  if(i==0)box(panelTriangles,{-h,-h-t,-h},{h,-h,h},wallMaterials[i]);
+  if(i==1)box(panelTriangles,{-h,h,-h},{h,h+t,h},wallMaterials[i]);
+  if(i==2)box(panelTriangles,{-h-t,-h,-h},{-h,h,h},wallMaterials[i]);
+  if(i==3)box(panelTriangles,{h,-h,-h},{h+t,h,h},wallMaterials[i]);
+ }
+ // Refresh cached contact friction without moving the existing bodies.
+ if(world)for(auto&body:bodies)if(body->getBroadphaseHandle())world->getBroadphase()->getOverlappingPairCache()->cleanProxyFromPairs(body->getBroadphaseHandle(),dispatcher.get());
+ revision++;rebuild();
+}
 void CrystalScene::updateBevel(){
  for(auto&c:cells)if(!c.removed){meshCell(c);auto shape=std::make_unique<btConvexHullShape>();for(auto p:c.hull)shape->addPoint(bt(p),false);shape->recalcLocalAabb();shape->setMargin(.0008f);auto old=c.body->getCollisionShape();c.body->setCollisionShape(shape.get());btVector3 inertia;shape->calculateLocalInertia(c.volume*2.5f,inertia);c.body->setMassProps(c.volume*2.5f,inertia);c.body->updateInertiaTensor();world->getBroadphase()->getOverlappingPairCache()->cleanProxyFromPairs(c.body->getBroadphaseHandle(),dispatcher.get());world->updateSingleAabb(c.body);for(auto&owned:shapes)if(owned.get()==old){owned=std::move(shape);break;}c.body->activate(true);}revision++;constrainBounds();rebuild();
 }
@@ -113,8 +140,10 @@ void CrystalScene::updateBox(float dt){
  for(size_t i=0;i<boxWalls.size();i++){boxWalls[i]->setWorldTransform(pose*wallLocal[i]);world->updateSingleAabb(boxWalls[i]);}
 }
 void CrystalScene::rebuild(){
+ auto coordinates=[&](Material&m,const btTransform&pose){auto inverse=pose.inverse();auto b=inverse.getBasis();auto o=inverse.getOrigin();m.localX={b[0].x(),b[0].y(),b[0].z(),o.x()};m.localY={b[1].x(),b[1].y(),b[1].z(),o.y()};m.localZ={b[2].x(),b[2].y(),b[2].z(),o.z()};};
+ for(int id:wallMaterials)coordinates(materials[id],boxTransform());
  triangles=staticTriangles;auto append=[&](const std::vector<Triangle>&mesh,const btTransform&t){for(auto a:mesh){a.a=F4(v3(t*bt(a.a.xyz())));a.b=F4(v3(t*bt(a.b.xyz())));a.c=F4(v3(t*bt(a.c.xyz())));a.n=F4(v3(t.getBasis()*bt(a.n.xyz())));triangles.push_back(a);}};
- append(frameTriangles,boxTransform());for(auto&c:cells)if(!c.removed)append(c.local,c.body->getWorldTransform());
+ append(frameTriangles,boxTransform());append(panelTriangles,boxTransform());for(auto&c:cells)if(!c.removed){coordinates(materials[c.material],c.body->getWorldTransform());append(c.local,c.body->getWorldTransform());}
 }
 bool CrystalScene::moving()const{if(!simulating||paused)return false;if(std::abs(rotationSpeed)>.00001f)return true;for(auto&c:cells)if(!c.removed&&c.body->isActive())return true;return false;}
 // Contacts enforce six sides; projection prevents residual rotating-vertex drift.
@@ -153,7 +182,7 @@ void CrystalScene::collectSound(){
  }soundSink(frame);
 }
 bool CrystalScene::extract(int id){if(id<0||id>=int(cells.size())||cells[id].removed)return false;for(auto&b:bonds)if(b.alive&&(b.a==id||b.b==id)){world->removeConstraint(b.joint);b.joint->setEnabled(false);b.alive=false;}world->removeRigidBody(cells[id].body);cells[id].removed=true;extracted++;revision++;simulating=true;paused=false;for(auto&c:cells)if(!c.removed)c.body->activate(true);rebuild();return true;}
-int CrystalScene::pick(V3 o,V3 d)const{float best=1e20f;int hit=-1;for(auto&t:triangles){if(!t.meta.y)continue;V3 a=t.a.xyz(),e1=t.b.xyz()-a,e2=t.c.xyz()-a,p=cross(d,e2);float det=dot(e1,p);if(std::abs(det)<1e-7f)continue;float inv=1/det;V3 s=o-a;float u=dot(s,p)*inv;if(u<0||u>1)continue;V3 q=cross(s,e1);float v=dot(d,q)*inv;if(v<0||u+v>1)continue;float distance=dot(e2,q)*inv;if(distance>.001f&&distance<best){best=distance;hit=int(t.meta.y)-1;}}return hit;}
+int CrystalScene::pick(V3 o,V3 d)const{float best=1e20f;int hit=-1;for(auto&t:triangles){V3 a=t.a.xyz(),e1=t.b.xyz()-a,e2=t.c.xyz()-a,p=cross(d,e2);float det=dot(e1,p);if(std::abs(det)<1e-7f)continue;float inv=1/det;V3 s=o-a;float u=dot(s,p)*inv;if(u<0||u>1)continue;V3 q=cross(s,e1);float v=dot(d,q)*inv;if(v<0||u+v>1)continue;float distance=dot(e2,q)*inv;if(distance>.001f&&distance<best){best=distance;hit=int(t.meta.y)-1;}}return hit;}
 float CrystalScene::cohesion()const{if(bonds.empty())return 1;int alive=0;for(auto&b:bonds)alive+=b.alive;return float(alive)/bonds.size();}
 bool CrystalScene::boundsValid(float e)const{auto inverse=boxTransform().inverse();for(auto&c:cells)if(!c.removed)for(auto p:c.hull){auto q=v3(inverse*c.body->getWorldTransform()*bt(p));if(std::abs(q.x)>boxHalf+e||std::abs(q.y)>boxHalf+e||std::abs(q.z)>boxHalf+e)return false;}return true;}
 bool CrystalScene::geometryValid()const{

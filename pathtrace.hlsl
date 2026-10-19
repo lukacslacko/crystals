@@ -1,5 +1,5 @@
 struct Surface { float4 a,b,c,n; uint4 meta; };
-struct Material { float4 colorType,params,absorption; };
+struct Material { float4 colorType,params,absorption,surface,localX,localY,localZ; };
 RaytracingAccelerationStructure Scene : register(t0);
 StructuredBuffer<Surface> Triangles : register(t1);
 StructuredBuffer<Material> Materials : register(t2);
@@ -26,6 +26,30 @@ float rnd(inout uint seed){seed=hash(seed+0x9e3779b9);return (seed>>8)*(1.0/1677
 float3 tangent(float3 n){return normalize(cross(abs(n.z)<.9?float3(0,0,1):float3(0,1,0),n));}
 float3 basisSample(float3 n,float2 u){float r=sqrt(u.x),phi=2*PI*u.y;float3 t=tangent(n);return normalize(t*(r*cos(phi))+cross(n,t)*(r*sin(phi))+n*sqrt(1-u.x));}
 float luminance(float3 c){return dot(c,float3(.2126,.7152,.0722));}
+float3 localPoint(Material m,float3 p){return float3(dot(m.localX,float4(p,1)),dot(m.localY,float4(p,1)),dot(m.localZ,float4(p,1)));}
+float lattice(int3 p){return (hash(asuint(p.x)*1597334677u^asuint(p.y)*3812015801u^asuint(p.z)*2798796415u)>>8)*(1.0/16777216.0);}
+float noise3(float3 p){int3 i=int3(floor(p));float3 f=frac(p);f=f*f*(3-2*f);return lerp(lerp(lerp(lattice(i),lattice(i+int3(1,0,0)),f.x),lerp(lattice(i+int3(0,1,0)),lattice(i+int3(1,1,0)),f.x),f.y),lerp(lerp(lattice(i+int3(0,0,1)),lattice(i+int3(1,0,1)),f.x),lerp(lattice(i+int3(0,1,1)),lattice(i+int3(1,1,1)),f.x),f.y),f.z);}
+float heightField(float3 q,int style){
+ if(style==1)return noise3(q*24)*.004+noise3(q*7)*.005;
+ if(style==2)return noise3(q*7)*.027+noise3(q*31)*.004;
+ if(style==3)return noise3(q*float3(65,8,45))*.0025+noise3(q*4)*.004;
+ return noise3(q*float3(110,3,72))*.0008;
+}
+void surfaceDetail(inout Material m,float3 p,float3 geometricNormal,out float3 n){
+ n=geometricNormal;int style=int(m.surface.z);float amount=m.surface.w;if(style==0||amount<=0)return;
+ float3 q=localPoint(m,p);float h=heightField(q,style),e=.004;
+ float3 g=(float3(heightField(q+float3(e,0,0),style),heightField(q+float3(0,e,0),style),heightField(q+float3(0,0,e),style))-h)/e;
+ float3 gradient=m.localX.xyz*g.x+m.localY.xyz*g.y+m.localZ.xyz*g.z;
+ n=normalize(n-amount*(gradient-n*dot(n,gradient)));
+ float grain=noise3(q*(style==2?13:32));float variation=style==2?lerp(.55,1.15,grain):style==3?lerp(.82,1.04,grain):lerp(.91,1.02,grain);
+ m.colorType.xyz*=lerp(1,variation,amount);
+}
+float fresnelSurface(Material m,float cosine){float f=saturate(m.surface.y);return f<=0?0:f+(1-f)*pow(1-saturate(cosine),5);}
+float3 attenuation(Material m,float distance){float density=m.colorType.w==2?-log(max(.001,m.surface.x))*.32:0;return exp(-(m.absorption.xyz+density)*distance);}
+float3 roughDirection(float3 ideal,float3 side,float rough,float2 sample){
+ float3 t=tangent(ideal);float a=sample.y*2*PI,r=sqrt(sample.x)*rough*rough*1.2;
+ float3 d=normalize(ideal+r*(t*cos(a)+cross(ideal,t)*sin(a)));return dot(d,side)>.0001?d:ideal;
+}
 float cone(uint i,float3 direction){return smoothstep(LightDirection[i].w,LightColor[i].w,dot(direction,LightDirection[i].xyz));}
 float3 primaryRay(float2 pixel){float2 uv=pixel/float2(Counts.xy)*2-1;return normalize(CameraForward.xyz+CameraRight.xyz*(uv.x*Settings.x*Settings.y)-CameraUp.xyz*(uv.y*Settings.x));}
 bool intersect(float3 o,float3 d,float maximum,out uint primitive,out float distance){
@@ -35,36 +59,36 @@ bool intersect(float3 o,float3 d,float maximum,out uint primitive,out float dist
  primitive=0;distance=maximum;return false;
 }
 float visibility(float3 o,float3 d,float maximum){uint primitive;float t;return intersect(o,d,maximum,primitive,t)?0:1;}
-bool glassScatter(inout float3 d,float3 n,bool entering,float ior,inout uint seed){
- float eta=entering?1/ior:ior,c=min(1,-dot(d,n));float r0=(ior-1)/(ior+1);r0*=r0;
- float f=r0+(1-r0)*pow(1-c,5);float3 refracted=refract(d,n,eta);
- bool transmission=dot(refracted,refracted)>.01&&rnd(seed)>=f;
- d=transmission?normalize(refracted):reflect(d,n);return transmission;
-}
 float3 environment(float3 d){return lerp(float3(.004,.006,.011),float3(.025,.033,.05),smoothstep(-.15,.8,d.y));}
 bool receiverUV(float3 p,uint material,out float2 pixel,out float area){
  if(material==3){pixel=float2((p.x+12)/24*2048,(p.y+.58)/22*1024);area=528.0/(2048*1024);return all(pixel>=0)&&pixel.x<2047&&pixel.y<1023;}
  if(material==0){pixel=float2((p.x+12)/24*2048,(p.z+8)/20*1024+1024);area=480.0/(2048*1024);return pixel.x>=0&&pixel.x<2047&&pixel.y>=1024&&pixel.y<2047;}
+ Material m=Materials[material];int panel=int(m.params.w)-10;
+ if(panel>=0&&panel<4){float3 q=localPoint(m,p);float plane=panel<2?q.y:q.x;
+  // Only the inside face receives this tile; do not leak caustics through an opaque panel.
+  if(abs(plane-((panel%2)?SceneParams.w:-SceneParams.w))>.003){pixel=0;area=1;return false;}
+  float2 uv=(panel<2?q.xz:q.zy)/(2*SceneParams.w)+.5;pixel=uv*1023+float2(2048+(panel%2)*1024,(panel/2)*1024);area=4*SceneParams.w*SceneParams.w/(1024*1024);return all(uv>=0)&&all(uv<1);}
  pixel=0;area=1;return false;
 }
+int4 photonBounds(int2 p){int x=p.x<2048?0:2048+((p.x-2048)/1024)*1024;int width=p.x<2048?2048:1024;int y=(p.y/1024)*1024;return int4(x,y,x+width-1,y+1023);}
 float3 photonAt(int2 q){return float3(PhotonMap[int3(q,0)],PhotonMap[int3(q,1)],PhotonMap[int3(q,2)]);}
 float3 causticIrradiance(float3 p,uint material){
  if((Options.w&4)==0)return 0;float2 pixel;float area;if(!receiverUV(p,material,pixel,area))return 0;
- int2 q=int2(pixel);float2 f=frac(pixel);
- float3 a=lerp(PhotonFiltered[q].xyz,PhotonFiltered[q+int2(1,0)].xyz,f.x);
- float3 b=lerp(PhotonFiltered[q+int2(0,1)].xyz,PhotonFiltered[q+int2(1,1)].xyz,f.x);
+ int2 q=int2(pixel);float2 f=frac(pixel);int4 bounds=photonBounds(q);int2 next=min(q+1,bounds.zw);
+ float3 a=lerp(PhotonFiltered[q].xyz,PhotonFiltered[int2(next.x,q.y)].xyz,f.x);
+ float3 b=lerp(PhotonFiltered[int2(q.x,next.y)].xyz,PhotonFiltered[next].xyz,f.x);
  return lerp(a,b,f.y)/PHOTON_SCALE*RenderParams.z;
 }
 void deposit(float3 p,uint material,float3 flux){
  float2 pixel;float area;if(!receiverUV(p,material,pixel,area))return;
  int2 base=int2(pixel);float3 energy=max(0,flux/area*PHOTON_SCALE);
  [unroll]for(int y=-2;y<=2;y++)[unroll]for(int x=-2;x<=2;x++){
-  int2 q=base+int2(x,y);if(q.x<0||q.x>=2048||q.y<0||q.y>=2048)continue;
+  int2 q=base+int2(x,y);int4 bounds=photonBounds(base);if(q.x<bounds.x||q.x>bounds.z||q.y<bounds.y||q.y>bounds.w)continue;
   float w=exp(-.5*(x*x+y*y))/6.168924;uint3 e=uint3(min(energy*w,10000000));
   if(e.x)InterlockedAdd(PhotonMap[int3(q,0)],e.x);if(e.y)InterlockedAdd(PhotonMap[int3(q,1)],e.y);if(e.z)InterlockedAdd(PhotonMap[int3(q,2)],e.z);
  }
 }
-[numthreads(8,8,1)]void ClearPhotons(uint3 id:SV_DispatchThreadID){if(all(id.xy<2048)){PhotonMap[uint3(id.xy,0)]=0;PhotonMap[uint3(id.xy,1)]=0;PhotonMap[uint3(id.xy,2)]=0;}}
+[numthreads(8,8,1)]void ClearPhotons(uint3 id:SV_DispatchThreadID){if(id.x<uint(SceneParams.z>0?4096:2048)&&id.y<2048){PhotonMap[uint3(id.xy,0)]=0;PhotonMap[uint3(id.xy,1)]=0;PhotonMap[uint3(id.xy,2)]=0;}}
 [numthreads(256,1,1)]void PhotonTrace(uint3 id:SV_DispatchThreadID){
  uint count=uint(RenderParams.y),index0=id.x+id.y*8388608;if(index0>=count)return;uint triplet=index0/3;uint seed=hash(triplet+37181);uint light=triplet%uint(SceneParams.x);int channel=int(index0%3);
  float3 origin=LightPosition[light].xyz;float3 axis=LightDirection[light].xyz,u=tangent(axis),v=cross(axis,u);
@@ -80,22 +104,27 @@ void deposit(float3 p,uint material,float3 flux){
  [loop]for(uint bounce=0;bounce<32;bounce++){
   uint index;float distance;if(!intersect(origin,d,100,index,distance))return;
   Surface hit=Triangles[index];Material m=Materials[hit.meta.x];float3 p=origin+d*distance;
-  if(medium>=0)flux*=exp(-Materials[medium].absorption.xyz*distance);if(max(flux.x,max(flux.y,flux.z))<1e-10)return;
+  if(medium>=0)flux*=attenuation(Materials[medium],distance);if(max(flux.x,max(flux.y,flux.z))<1e-10)return;
   bool entering=dot(d,hit.n.xyz)<0;float3 n=entering?hit.n.xyz:-hit.n.xyz;int kind=int(m.colorType.w);
-  if(kind==2){float ior=m.params.y+(channel==0?-1:channel==2?1:0)*m.absorption.w;if(glassScatter(d,n,entering,ior,seed))medium=entering?int(hit.meta.x):-1;touchedCrystal=true;}
-  else if(kind==1){d=reflect(d,n);flux*=m.colorType.xyz;}
+  float3 geometric=n;surfaceDetail(m,p,geometric,n);
+  if(kind==2){float ior=m.params.y+(channel==0?-1:channel==2?1:0)*m.absorption.w;float3 tr=refract(d,n,entering?1/ior:ior);float fr=fresnelSurface(m,-dot(d,n));if(dot(tr,tr)<.01)fr=1;float choice=rnd(seed);
+   if(choice<fr)d=roughDirection(reflect(d,n),geometric,m.params.x,float2(rnd(seed),rnd(seed)));
+   else if(choice<fr+(1-fr)*m.surface.x){d=roughDirection(normalize(tr),-geometric,m.params.x,float2(rnd(seed),rnd(seed)));medium=entering?int(hit.meta.x):-1;}
+   else return;touchedCrystal=true;
+  }
+  else if(kind==1){d=roughDirection(reflect(d,n),geometric,m.params.x,float2(rnd(seed),rnd(seed)));flux*=m.colorType.xyz;}
   else{if(kind==0&&touchedCrystal)deposit(p,hit.meta.x,flux);return;}
   origin=p+d*.0005;
  }
 }
 [numthreads(8,8,1)]void PhotonHorizontal(uint3 id:SV_DispatchThreadID){
- if(any(id.xy>=2048))return;float3 sum=0;float weights=0;
+ if(id.x>=uint(SceneParams.z>0?4096:2048)||id.y>=2048)return;float3 sum=0;float weights=0;int4 bounds=photonBounds(int2(id.xy));
  float variance=RenderParams.y<2000000?24:4.5;int radius=RenderParams.y<2000000?10:4;
- [loop]for(int x=-radius;x<=radius;x++){float w=exp(-float(x*x)/variance);sum+=photonAt(int2(clamp(int(id.x)+x,0,2047),id.y))*w;weights+=w;}
+ [loop]for(int x=-radius;x<=radius;x++){float w=exp(-float(x*x)/variance);sum+=photonAt(int2(clamp(int(id.x)+x,bounds.x,bounds.z),id.y))*w;weights+=w;}
  PhotonTemp[id.xy]=float4(sum/weights,1);
 }
 [numthreads(8,8,1)]void PhotonVertical(uint3 id:SV_DispatchThreadID){
- if(any(id.xy>=2048))return;float3 sum=0;float weights=0;int low=id.y<1024?0:1024;
+ if(id.x>=uint(SceneParams.z>0?4096:2048)||id.y>=2048)return;float3 sum=0;float weights=0;int low=id.y<1024?0:1024;
  float variance=RenderParams.y<2000000?24:4.5;int radius=RenderParams.y<2000000?10:4;
  [loop]for(int y=-radius;y<=radius;y++){float w=exp(-float(y*y)/variance);sum+=PhotonTemp[int2(id.x,clamp(int(id.y)+y,low,low+1023))].xyz*w;weights+=w;}
  PhotonFiltered[id.xy]=float4(sum/weights,1);
@@ -110,46 +139,58 @@ float3 directLighting(float3 p,float3 n,float3 view,Material m,bool metallic){
  float3 sum=0;
  [loop]for(uint i=0;i<uint(SceneParams.x);i++){
   float3 delta=LightPosition[i].xyz-p;float r2=dot(delta,delta),distance=sqrt(r2);float3 l=delta/distance;float nl=max(0,dot(n,l));
-  float beam=cone(i,-l);if(nl<=0||beam<=0)continue;float3 brdf=metallic?metalBRDF(n,view,l,m.colorType.xyz,m.params.x):m.colorType.xyz/PI;
+  float beam=cone(i,-l);if(nl<=0||beam<=0)continue;float f=fresnelSurface(m,dot(n,view)),transmission=m.colorType.w==2?m.surface.x:0;
+  float3 brdf=metallic?metalBRDF(n,view,l,m.colorType.xyz,m.params.x):m.colorType.xyz*((1-f)*(1-transmission)/PI)+(m.surface.y>0?metalBRDF(n,view,l,m.surface.y.xxx,m.params.x):float3(0,0,0));
   sum+=brdf*LightColor[i].xyz*(beam*nl/r2)*visibility(p+n*.0005,l,distance-.002);
  }return sum;
 }
-struct OpticalRay {float3 o,d,weight;int medium;uint depth;};
+struct OpticalRay {float3 o,d,weight;int medium;uint depth,rough;};
+void surfaceLobes(Material m,float3 d,float3 n,bool entering,int channel,out float3 reflected,out float3 transmitted,out float3 reflectionWeight,out float transmissionWeight,out float diffuseWeight){
+ reflected=reflect(d,n);transmitted=0;float f=fresnelSurface(m,-dot(d,n));float transmission=m.colorType.w==2?m.surface.x:0;
+ if(transmission>0){float ior=m.params.y+(channel==0?-1:channel==2?1:0)*m.absorption.w;transmitted=refract(d,n,entering?1/ior:ior);if(dot(transmitted,transmitted)<.01)f=1;else transmitted=normalize(transmitted);}
+ reflectionWeight=m.colorType.w==1?m.colorType.xyz+(1-m.colorType.xyz)*pow(1-saturate(-dot(d,n)),5):f.xxx;
+ transmissionWeight=(1-f)*transmission;diffuseWeight=m.colorType.w==1?0:(1-f)*(1-transmission);
+}
 // Bounded Whitted integration: no Russian roulette or random Fresnel decisions.
 // Small branches are deliberately truncated; diffuse indirect is an irradiance
 // approximation. The stochastic integrator remains separately available.
 float3 stablePath(float3 o,float3 d,int channel){
- OpticalRay stack[8];int size=1;stack[0].o=o;stack[0].d=d;stack[0].weight=1;stack[0].medium=-1;stack[0].depth=0;float3 result=0;
- [loop]for(uint work=0;work<72&&size>0;){
+ OpticalRay stack[8];int size=1;stack[0].o=o;stack[0].d=d;stack[0].weight=1;stack[0].medium=-1;stack[0].depth=0;stack[0].rough=0;float3 result=0;
+ [loop]for(uint work=0;work<96&&size>0;){
   OpticalRay ray=stack[--size];
-  [loop]for(;ray.depth<Options.x&&work<72;ray.depth++){
+  [loop]for(;ray.depth<Options.x&&work<96;ray.depth++){
    work++;uint primitive;float distance;
    if(!intersect(ray.o,ray.d,300,primitive,distance)){result+=ray.weight*environment(ray.d);break;}
    Surface hit=Triangles[primitive];Material m=Materials[hit.meta.x];float3 p=ray.o+ray.d*distance;
-   bool entering=dot(ray.d,hit.n.xyz)<0;float3 n=entering?hit.n.xyz:-hit.n.xyz;
-   if(ray.medium>=0)ray.weight*=exp(-Materials[ray.medium].absorption.xyz*distance);
+   bool entering=dot(ray.d,hit.n.xyz)<0;float3 geometric=entering?hit.n.xyz:-hit.n.xyz,n;surfaceDetail(m,p,geometric,n);
+   if(ray.medium>=0)ray.weight*=attenuation(Materials[ray.medium],distance);
    if(max(ray.weight.x,max(ray.weight.y,ray.weight.z))<.006)break;
    int kind=int(m.colorType.w);
-   if(kind==2){
-    float ior=m.params.y+(channel==0?-1:channel==2?1:0)*m.absorption.w;
-    float cosine=saturate(-dot(ray.d,n)),eta=entering?1/ior:ior;float3 transmitted=refract(ray.d,n,eta),reflected=reflect(ray.d,n);
-    float f0=(ior-1)/(ior+1);f0*=f0;float fresnel=f0+(1-f0)*pow(1-cosine,5);
-    if(dot(transmitted,transmitted)<.01){ray.d=reflected;ray.o=p+ray.d*.0004;continue;}
-    OpticalRay secondary=ray;secondary.depth=ray.depth+1;
-    if(fresnel<.5){secondary.d=reflected;secondary.weight*=fresnel;ray.d=normalize(transmitted);ray.weight*=1-fresnel;ray.medium=entering?int(hit.meta.x):-1;}
-    else {secondary.d=normalize(transmitted);secondary.weight*=1-fresnel;secondary.medium=entering?int(hit.meta.x):-1;ray.d=reflected;ray.weight*=fresnel;}
-    secondary.o=p+secondary.d*.0004;
-    if(size<8&&max(secondary.weight.x,max(secondary.weight.y,secondary.weight.z))>.012)stack[size++]=secondary;
-    ray.o=p+ray.d*.0004;
-   }else if(kind==1){
-    result+=ray.weight*directLighting(p,n,-ray.d,m,true);float cosine=saturate(-dot(ray.d,n));ray.weight*=m.colorType.xyz+(1-m.colorType.xyz)*pow(1-cosine,5);ray.d=reflect(ray.d,n);ray.o=p+n*.0004;
-   }else if(kind==3){
-    if(ray.depth==0){ray.o=p+ray.d*.001;continue;}uint lamp=max(0,int(m.params.w)-1);result+=ray.weight*m.colorType.xyz*m.params.z*cone(lamp,-ray.d);break;
-   }else{
-    float3 ambient=lerp(float3(.024,.027,.033),float3(.075,.083,.10),saturate(n.y*.5+.5));
-    float3 illumination=directLighting(p,n,-ray.d,m,false)+m.colorType.xyz*(causticIrradiance(p,hit.meta.x)/PI+ambient);
-    result+=ray.weight*illumination;break;
+   if(kind==3){
+    if(ray.depth==0){ray.o=p+ray.d*.001;continue;}
+    // Rough-surface direct highlights are already integrated by directLighting.
+    // Do not count a rare, extremely bright emitter hit from the cone again.
+    if(ray.rough==0){uint lamp=max(0,int(m.params.w)-1);result+=ray.weight*m.colorType.xyz*m.params.z*cone(lamp,-ray.d);}break;
    }
+   float3 reflected,transmitted,wr;float wt,wd;surfaceLobes(m,ray.d,n,entering,channel,reflected,transmitted,wr,wt,wd);
+   if(dot(reflected,geometric)<=0)reflected=reflect(ray.d,geometric);
+   if(wt>0&&dot(transmitted,geometric)>=0)transmitted=refract(ray.d,geometric,entering?1/m.params.y:m.params.y);
+   float3 ambient=lerp(float3(.024,.027,.033),float3(.075,.083,.10),saturate(n.y*.5+.5));
+   result+=ray.weight*(directLighting(p,n,-ray.d,m,kind==1)+m.colorType.xyz*wd*(ambient+causticIrradiance(p,hit.meta.x)/PI));
+   ray.rough=m.params.x>.12?1:0;OpticalRay secondary=ray;secondary.depth=ray.depth+1;float3 secondarySide,primarySide;
+   if(wt>max(wr.x,max(wr.y,wr.z))){secondary.d=reflected;secondary.weight*=wr;secondarySide=geometric;ray.d=transmitted;ray.weight*=wt;ray.medium=entering?int(hit.meta.x):-1;primarySide=-geometric;}
+   else{secondary.d=transmitted;secondary.weight*=wt;secondary.medium=entering?int(hit.meta.x):-1;secondarySide=-geometric;ray.d=reflected;ray.weight*=wr;primarySide=geometric;}
+   secondary.o=p+secondarySide*.0005;
+   if(size<8&&max(secondary.weight.x,max(secondary.weight.y,secondary.weight.z))>.012)stack[size++]=secondary;
+   if(max(ray.weight.x,max(ray.weight.y,ray.weight.z))<.006)break;
+   // Fixed cone quadrature approximates a rough lobe without temporal grain.
+   // Keep secondary scattering bounded; the stochastic integrator samples it fully.
+   if(m.params.x>.12&&ray.depth<3&&size<=5){
+    float3 ideal=ray.d;ray.weight/=3;
+    [unroll]for(int k=1;k<3;k++){OpticalRay branch=ray;branch.depth=ray.depth+1;branch.d=roughDirection(ideal,primarySide,m.params.x,float2(.5,k/3.0));branch.o=p+primarySide*.0005;stack[size++]=branch;}
+    ray.d=roughDirection(ideal,primarySide,m.params.x,float2(.5,0));
+   }
+   ray.o=p+primarySide*.0005;
   }
  }return min(result,2000);
 }
@@ -158,19 +199,16 @@ float3 path(float3 o,float3 d,inout uint seed,int channel){
  [loop]for(uint bounce=0;bounce<Options.x;bounce++){
   uint primitive;float distance;if(!intersect(o,d,300,primitive,distance)){radiance+=throughput*environment(d);break;}
   Surface hit=Triangles[primitive];Material m=Materials[hit.meta.x];float3 p=o+d*distance;
-  bool entering=dot(d,hit.n.xyz)<0;float3 n=entering?hit.n.xyz:-hit.n.xyz;if(medium>=0)throughput*=exp(-Materials[medium].absorption.xyz*distance);
+  bool entering=dot(d,hit.n.xyz)<0;float3 geometric=entering?hit.n.xyz:-hit.n.xyz,n;surfaceDetail(m,p,geometric,n);if(medium>=0)throughput*=attenuation(Materials[medium],distance);
   int kind=int(m.colorType.w);
   if(kind==3){if(bounce==0){o=p+d*.001;continue;}uint lamp=max(0,int(m.params.w)-1);if(specular&&!hadDiffuse)radiance+=throughput*m.colorType.xyz*m.params.z*cone(lamp,-d);break;}
-  if(kind==2){float ior=m.params.y+(channel==0?-1:channel==2?1:0)*m.absorption.w;if(glassScatter(d,n,entering,ior,seed))medium=entering?int(hit.meta.x):-1;o=p+d*.0004;specular=true;}
-  else if(kind==1){
-   float grain=sin(p.y*1900+p.x*13)*.003;n=normalize(n+float3(grain,grain*.14,0));float3 metalLight=directLighting(p,n,-d,m,true);if(hadDiffuse)metalLight=min(metalLight,2.5);radiance+=throughput*metalLight;
-   float3 reflected=reflect(d,n);float cosine=max(0,-dot(n,d));d=normalize(lerp(reflected,basisSample(n,float2(rnd(seed),rnd(seed))),m.params.x*m.params.x));if(dot(d,n)<0)d=reflected;
-   throughput*=m.colorType.xyz+(1-m.colorType.xyz)*pow(1-cosine,5);o=p+n*.0004;specular=false;
-  }else{
-   if(hit.meta.x==0)m.colorType.xyz*=.985+.025*sin(p.x*23+sin(p.z*17))*sin(p.z*31);
-   float3 illumination=directLighting(p,n,-d,m,false)+m.colorType.xyz/PI*causticIrradiance(p,hit.meta.x);if(hadDiffuse)illumination=min(illumination,4);radiance+=throughput*illumination;
-   throughput*=m.colorType.xyz;d=basisSample(n,float2(rnd(seed),rnd(seed)));o=p+n*.0004;specular=false;hadDiffuse=true;
-  }
+  float3 reflected,transmitted,wr;float wt,wd;surfaceLobes(m,d,n,entering,channel,reflected,transmitted,wr,wt,wd);
+  if(dot(reflected,geometric)<=0)reflected=reflect(d,geometric);
+  float3 illumination=directLighting(p,n,-d,m,kind==1)+m.colorType.xyz*wd/PI*causticIrradiance(p,hit.meta.x);if(hadDiffuse)illumination=min(illumination,4);radiance+=throughput*illumination;
+  float pr=kind==1?1:wr.x,choice=rnd(seed);specular=m.params.x<=.12;
+  if(choice<pr){throughput*=wr/max(.00001,pr);d=roughDirection(reflected,geometric,m.params.x,float2(rnd(seed),rnd(seed)));o=p+geometric*.0005;}
+  else if(choice<pr+wt){d=roughDirection(transmitted,-geometric,m.params.x,float2(rnd(seed),rnd(seed)));medium=entering?int(hit.meta.x):-1;o=p-geometric*.0005;}
+  else{throughput*=m.colorType.xyz;d=basisSample(n,float2(rnd(seed),rnd(seed)));if(dot(d,geometric)<0)d=basisSample(geometric,float2(rnd(seed),rnd(seed)));o=p+geometric*.0005;specular=false;hadDiffuse=true;}
   if(bounce>5){float survival=clamp(max(throughput.x,max(throughput.y,throughput.z)),.1,.98);if(rnd(seed)>survival)break;throughput/=survival;}
  }return min(radiance,2000);
 }

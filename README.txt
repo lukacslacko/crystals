@@ -7,8 +7,9 @@ THE ROTATING CUBE
 
 The container is a 10.4 x 10.4 x 10.4 cube, larger than the original 8 x 5 x 2.8
 crystal slab. Twelve chamfered polished-metal rails and eight champagne-metal
-corner blocks define its outline. All six faces are invisible collision walls;
-they do not block or refract light. The studio wall and floor stay stationary.
+corner blocks define its outline. Six rigid faces contain the pieces; by default
+they are invisible. The four side walls can also be paper, stone or metal.
+The two end walls stay invisible. The studio wall and floor stay stationary.
 
 The original 3D Voronoi crystal arrangement is released into this larger volume
 as independent rigid bodies. Gravity makes the crystals fall, collide and scatter.
@@ -24,11 +25,40 @@ check operates in the rotating cube's local coordinates; a small conservative
 projection corrects residual numerical drift. It does not rotate the crystals
 as a rigid group.
 
+MATERIAL CONTROLS
+
+Open Materials... in the main panel. Choose Flat crystal, Rubbery, Stony or
+Papery, then edit the values independently:
+  Interior transparency: 0 (opaque tinted solid) to 1 (clear tinted crystal).
+    Intermediate settings mix diffuse/transmitted light and bulk absorption.
+  Surface shine: 0 (rough) to 1 (polished). Rough transmission looks frosted.
+  Surface reflectance: 0 to 1, measured at normal incidence. This artistic
+    control is independent of IOR; about 0.04 gives ordinary glass reflection.
+  Surface structure: 0 to 1, for the rubber, stone and paper textures.
+
+Procedural bump and pigment variation use object-local coordinates, so textures
+stay attached to the moving pieces. Presets change friction, restitution and
+approximate modal tuning/damping too. Rubber and paper are still rigid bodies.
+
+The four walls parallel to the rotation axis can be Invisible, Paper, Stone or
+Metal, together or individually. Their names refer to their starting positions.
+Paper and stone receive crystal caustics; metal reflects light paths. Opaque walls
+block picking of hidden crystals. Collision boundaries remain on all six sides.
+Wall finishes also change friction and contact sound; invisible walls sound like
+glass. End-wall sound remains glass.
+
+Changes apply live, preserve body poses, and are saved in MaterialSettings.ini.
+Reset materials restores clear crystals and invisible walls. Stable optics uses
+fixed three-direction quadrature for early rough lobes to avoid random motion
+grain; this is a bounded approximation. Stochastic mode progressively samples
+rough reflections and transmission. The photon atlas includes four extra tiles
+for the rotating side walls, retaining the original floor/backdrop resolution.
+
 AMBIENT GLASS AUDIO
 
 Sound is enabled at 75% by default. The output gain is now another 5x higher
 (+14 dB before peak limiting) than the previous audio-settings build.
-Use the Glass sound checkbox or M to mute. The volume slider
+Use the Contact sound checkbox or M to mute. The volume slider
 controls only this app. Pausing stops new contact
 excitation; the remaining short glass ticks fade away in roughly 20 ms.
 
@@ -36,7 +66,7 @@ Open Audio settings below the main volume slider. All changes apply live:
   Master volume: 0-100%, default 75%.
   Decay time: 5-500 ms, default 20 ms. Approximate time to fade by 40 dB;
     individual shapes and higher modes vary slightly. Longer values ring more.
-  Impacts / Scraping / Glass walls: independent levels from 0-300%.
+  Impacts / Scraping / Wall sounds: independent levels from 0-300%.
   Pitch: -12 to +12 semitones, retaining the differences between crystal shapes.
   Scrape texture: 0.25-3x grain density, from separate ticks to a finer scrape.
   Onset spread: 0-8 ms, default 8 ms. Independently staggers impacts within a
@@ -54,7 +84,7 @@ fundamentals around 1625 to 2692 Hz, with quieter higher modes up to 11.5 kHz.
 The amplitude time constants are about 2 to 4.5 ms: an isolated hit falls more
 than 40 dB below its attack around 20 ms. These are dry glass taps, with no reverb.
 
-The six invisible container walls also have independent glass-pane resonators,
+With the default invisible finish, the six walls have glass-pane resonators,
 with lower tuning (around 1.05 kHz) and equally short release. They stay visually
 invisible and retain the same rigid collision boundaries. Closing speed and
 collision impulse excite brief strikes in both contacting objects. A gentle
@@ -135,7 +165,18 @@ The application keeps rendering while the cube rotates. Pausing allows it to
 converge and rest the GPU. The GPU time readout covers camera rendering and
 reconstruction; physics, geometry updates and photon tracing add other work.
 
-VALIDATION ON THIS WORKSTATION
+MATERIAL VALIDATION
+
+The material build passes SceneValidation, AudioValidation and MaterialValidation.
+Material checks cover settings persistence/ranges, transparency endpoints, mixed
+wall visibility, picking occlusion, rigid-body pose preservation, friction/audio
+changes, and object-local texture coordinates after ten seconds of rotation.
+Native GPU captures were inspected for every preset, paper/stone/metal walls,
+partial transparency, mirror reflectance, and the stochastic rendering mode.
+A live mixed-wall run passed containment checks for 360 frames at 1440 x 900
+in 7.05 seconds. Its final camera-rendering GPU time was 12.79 ms at 3 spp.
+
+BASELINE MEASUREMENTS BEFORE MATERIAL CONTROLS
 
 The RTX 5070 rendered the live 360-frame tumble test at 1440 x 900 in 5.78 seconds,
 including geometry and lighting updates. Its final camera-rendering GPU time was
@@ -166,6 +207,12 @@ A still capture simulates ten seconds, pauses, and refines the result.
 also saves the first matching view as .first.png. --raw disables denoising.
 --path-tracing selects the stochastic integrator. --spp fixes its sample batch.
 --no-caustics disables photon caustics. --yaw sets the initial camera angle.
+--material crystal|rubber|stone|paper selects a starting finish.
+--transparency, --shine and --reflectance accept values from 0 to 1.
+--walls invisible|paper|stone|metal sets all four side walls.
+--mixed-walls selects paper, stone, metal and invisible on successive sides.
+Put a material preset before its numeric overrides. Capture mode uses defaults
+unless overridden; it does not load saved material preferences.
 Logs are written beside the executable.
 
 BUILD FROM SOURCE

@@ -7,10 +7,12 @@ A native Windows crystal tumbler built with C++20, DirectX 12 hardware ray traci
 ## Features
 
 - True 3D Voronoi crystals, with tinted absorption, configurable refraction, and bevels on every edge.
+- Live material controls: interior transparency (0–1), shine, reflectance, and crystal, rubber, stone, or paper surface presets with adjustable texture strength.
 - Hardware ray queries for reflection, refraction, internal reflection, and color dispersion; photon paths produce colored caustics on the wall and floor.
-- A rotating metal cube with six invisible collision walls. Crystals fall, tumble, slide, and collide inside it.
+- A rotating metal cube with six collision walls. Its four side walls can independently be invisible, paper, stone, or metal; the two end walls stay invisible. Crystals fall, tumble, slide, and collide inside it.
 - Stable crystal optics for motion, plus a stochastic path-tracing mode and progressive still-image refinement.
 - Six approximate resonant modes per crystal and per glass wall. Collisions drive short taps; sliding drives irregular micro-impacts.
+- Material presets also adjust contact friction, restitution, and modal sound. All shapes remain rigid, including paper and rubber finishes.
 - Live audio controls for volume, decay, impact/scrape/wall levels, pitch, scrape density, and onset spread. Preferences persist between launches.
 
 ## Requirements
@@ -50,13 +52,19 @@ Keep all eight `.cso` shader files beside `CrystalSlab.exe`. The build copies th
 
 The panel controls cell count, index of refraction, bevel width, cube rotation, optics, and GPU rendering budget. **Audio settings** opens the sound panel. The default decay is approximately 20 ms, and impacts are independently staggered within an 8 ms window to avoid synchronized starts. Audio preferences are stored in `AudioSettings.ini` beside the executable.
 
+**Materials…** opens the material panel. Choose a surface preset, then independently edit transparency, shine, reflectance, and structure. Transparency 0 gives an opaque tinted solid; 1 gives clear tinted transmission. Lower shine broadens highlights and roughens transmission. Reflectance sets the normal-incidence reflection strength independently of the refraction index. The structure slider controls procedural bump and pigment variation attached to each moving piece.
+
+Set all four side walls together or expand **Set walls individually**. The names refer to their positions before rotation. Material preferences persist in `MaterialSettings.ini`. Changes preserve the current arrangement. Paper and stone panels receive crystal caustics; metal panels reflect the light paths.
+
+![Stony pieces inside the cube with metal side walls](docs/materials.png)
+
 ## Validation
 
 ```powershell
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The tests check Voronoi geometry, rotating-container physics, containment, modal decay, onset spreading, scrape behavior, audio controls, saved settings, and peak limiting. They do not need a GPU or an audio output device. The audio test writes a procedural recording to `build/GlassAmbient.wav`.
+The tests check Voronoi geometry, rotating-container physics, containment, modal decay, onset spreading, scrape behavior, audio controls, saved settings, peak limiting, material ranges, independently visible walls, and texture coordinates during rotation. They do not need a GPU or an audio output device. The audio test writes a procedural recording to `build/GlassAmbient.wav`.
 
 To check the actual audio output device as well:
 
@@ -69,9 +77,12 @@ For a rendered still or a live GPU/physics test:
 ```powershell
 .\build\app\CrystalSlab.exe --capture "$PWD/still.png" --settle 10 --samples 1536 --width 1920 --height 1200
 .\build\app\CrystalSlab.exe --capture "$PWD/moving.png" --dynamic-test
+.\build\app\CrystalSlab.exe --capture "$PWD/stone.png" --material stone --walls metal
 ```
 
-See [the detailed guide](README.txt) for rendering modes, command-line options, implementation notes, and recorded development measurements. The fast optics mode uses bounded ray branching and approximate diffuse indirect light; the audio uses a lightweight modal approximation rather than finite-element acoustics.
+Capture overrides also accept `--transparency`, `--shine`, and `--reflectance` (0–1), and `--mixed-walls`. Put the preset before its overrides. Captures start from default material settings, independent of saved UI preferences.
+
+See [the detailed guide](README.txt) for rendering modes, command-line options, implementation notes, and recorded development measurements. The fast optics mode uses bounded ray branching, a fixed three-direction approximation for early rough reflection/refraction lobes, and approximate diffuse indirect light. The stochastic mode samples rough scattering progressively. The audio uses a lightweight modal approximation rather than finite-element acoustics.
 
 ## License
 

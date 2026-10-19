@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <functional>
 #include "sound_model.h"
+#include "material_settings.h"
 
 struct V2 { float x=0,y=0; V2 operator+(V2 b)const{return{x+b.x,y+b.y};} V2 operator-(V2 b)const{return{x-b.x,y-b.y};} V2 operator*(float s)const{return{x*s,y*s};} };
 struct V3 { float x=0,y=0,z=0; V3 operator+(V3 b)const{return{x+b.x,y+b.y,z+b.z};} V3 operator-(V3 b)const{return{x-b.x,y-b.y,z-b.z};} V3 operator*(float s)const{return{x*s,y*s,z*s};} V3 operator/(float s)const{return{x/s,y/s,z/s};} };
@@ -17,10 +18,10 @@ inline V3 norm(V3 a){return a/std::max(.000001f,std::sqrt(dot(a,a)));}
 struct F4 {float x=0,y=0,z=0,w=0; F4()=default;F4(float a,float b,float c,float d=0):x(a),y(b),z(c),w(d){} F4(V3 v,float d=0):x(v.x),y(v.y),z(v.z),w(d){} V3 xyz()const{return{x,y,z};}};
 struct U4 {uint32_t x=0,y=0,z=0,w=0;};
 struct Triangle {F4 a,b,c,n;U4 meta;};
-struct Material {F4 colorType;F4 params;F4 absorption;};
+struct Material {F4 colorType,params,absorption,surface;F4 localX{1,0,0,0},localY{0,1,0,0},localZ{0,0,1,0};};
 struct SpotLight {V3 position,direction,intensity;float innerCos,outerCos,radius;};
 struct Face {std::vector<V3> vertices;V3 normal;float distance=0;int neighbor=-1;};
-struct Cell {int id=0,material=0;std::vector<Face> faces;std::vector<Triangle> local;std::vector<V3> hull;V3 center;float volume=0;btRigidBody* body=nullptr;bool removed=false;};
+struct Cell {int id=0,material=0;std::vector<Face> faces;std::vector<Triangle> local;std::vector<V3> hull;V3 center,tint;float volume=0;btRigidBody* body=nullptr;bool removed=false;};
 struct Bond {int a,b;btTypedConstraint* joint=nullptr;float area=1;bool alive=true;};
 struct Camera {
  float yaw=.34f,pitch=.18f,distance=34.0f,aperture=0;V3 target{0,7.5f,0};
@@ -30,7 +31,8 @@ struct Camera {
 };
 class CrystalScene {
 public:
- std::vector<Triangle> triangles,staticTriangles,frameTriangles;std::vector<Material> materials;std::vector<Cell> cells;std::vector<Bond>bonds;std::vector<SpotLight> lights;
+ std::vector<Triangle> triangles,staticTriangles,frameTriangles,panelTriangles;std::vector<Material> materials;std::vector<Cell> cells;std::vector<Bond>bonds;std::vector<SpotLight> lights;
+ MaterialSettings appearance;std::array<int,4>wallMaterials{};
  std::unique_ptr<btDefaultCollisionConfiguration> configuration;
  std::unique_ptr<btCollisionDispatcher> dispatcher;std::unique_ptr<btDbvtBroadphase> broadphase;
  std::unique_ptr<btSequentialImpulseConstraintSolver> solver;std::unique_ptr<btDiscreteDynamicsWorld> world;
@@ -38,7 +40,7 @@ public:
  int density=56,extracted=0;float strength=.55f,ior=1.54f,bevel=.075f,depth=2.8f;bool simulating=false,paused=false;float simulationTime=0;uint32_t revision=0;
  float boxHalf=5.2f,boxAngle=0,rotationSpeed=4;V3 boxCenter{0,7.5f,0};std::vector<btRigidBody*>boxWalls;std::vector<btTransform>wallLocal;
  uint32_t soundGeneration=0;std::function<void(const SoundFrame&)>soundSink;
- btTransform boxTransform()const;void updateBox(float dt);
+ btTransform boxTransform()const;void updateBox(float dt);void updateMaterials();
  ~CrystalScene();void clearPhysics();void create(uint32_t seed=73192);void rebuild();void updateOptics();void updateBevel();bool step(float dt);bool extract(int id);int pick(V3 origin,V3 direction)const;float cohesion()const;bool boundsValid(float tolerance=.045f)const;bool geometryValid()const;bool moving()const;
 private:
  float accumulator=0;void makeStudio();void makeCell(Cell&cell);void meshCell(Cell&cell);void constrainBounds();

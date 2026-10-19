@@ -35,10 +35,15 @@ SoundDescription describeSound(const CrystalScene&s){
   auto span=hi-lo;float axes[]={span.x,span.y,span.z};std::sort(axes,axes+3);float size=std::cbrt(std::max(.05f,volume)),aspect=axes[2]/std::max(.1f,axes[0]);
   float base=std::clamp(2400.f/size*(.94f+.045f*aspect),1300.f,4000.f);float ratios[]={1,1.47f,2.09f,2.81f,3.68f,4.77f};
   for(int k=0;k<SoundModes;k++){float shape=1+.025f*std::sin(float(c.hull.size())*.37f+k*1.71f)+.025f*(axes[k%3]/size-1);v.frequency[k]=std::min(11500.f,base*ratios[k]*shape);v.decay[k]=std::clamp(.0034f+.0005f*size,.0035f,.0045f)/(1+.16f*k);v.gain[k]=.48f/std::pow(1.f+k,1.05f);}
+  // Small modal approximations retain shape tuning while changing material response.
+  int finish=s.appearance.finish;const float pitch[]={1,.24f,.58f,.85f},release[]={1,.38f,.65f,.24f},level[]={1,.65f,.8f,.5f};
+  for(int k=0;k<SoundModes;k++){v.frequency[k]*=pitch[finish];v.decay[k]*=release[finish];v.gain[k]*=level[finish]/(1+(finish==1?.45f:finish==3?.12f:0)*k);}
   v.pan=std::clamp(c.body->getWorldTransform().getOrigin().x()/9.f,-.7f,.7f);
  }
  for(int p=0;p<6;p++){auto&v=d.voices[96+p];v.enabled=true;v.pane=true;float ratios[]={1,1.62f,2.36f,3.23f,4.31f,5.71f};float base=1050.f*(10.4f/(2*s.boxHalf))*(1+.018f*p);
   for(int k=0;k<SoundModes;k++){v.frequency[k]=base*ratios[k];v.decay[k]=.0038f/(1+.18f*k);v.gain[k]=.30f/std::pow(1.f+k,.95f);}
+  int finish=p<4?s.appearance.walls[p]:0;const float pitch[]={1,.75f,.48f,1.2f},release[]={1,.22f,.6f,1.8f},level[]={1,.55f,.8f,.9f};
+  for(int k=0;k<SoundModes;k++){v.frequency[k]*=pitch[finish];v.decay[k]*=release[finish];v.gain[k]*=level[finish];}
  }return d;
 }
 float GlassSynth::noise(){random^=random<<13;random^=random>>17;random^=random<<5;return float(random>>8)*(2.f/16777216.f)-1;}

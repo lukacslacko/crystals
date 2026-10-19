@@ -11,5 +11,6 @@
 *.wav
 *.zip
 AudioSettings.ini
+MaterialSettings.ini
 imgui.ini
 Crystal-*.png

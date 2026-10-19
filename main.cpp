@@ -33,7 +33,7 @@ static void audioPanel(Renderer&r,AudioSettings&settings,bool&open,bool saveFail
   if(ImGui::IsItemHovered())ImGui::SetTooltip("Approximate time for a glass tap to fall by 40 dB.\n20 ms is dry and crisp; longer values ring more.");
   ImGui::TextDisabled("IMPACTS");audioLevel("##Impacts",settings.impacts,"%.0f%%",300);
   ImGui::TextDisabled("SCRAPING");audioLevel("##Scraping",settings.scraping,"%.0f%%",300);
-  ImGui::TextDisabled("GLASS WALLS");audioLevel("##Walls",settings.walls,"%.0f%%",300);
+  ImGui::TextDisabled("WALL SOUNDS");audioLevel("##Walls",settings.walls,"%.0f%%",300);
   ImGui::TextDisabled("PITCH");ImGui::SetNextItemWidth(-1);ImGui::SliderFloat("##Pitch",&settings.pitch,-12,12,"%+.1f semitones");
   ImGui::TextDisabled("SCRAPE TEXTURE");ImGui::SetNextItemWidth(-1);ImGui::SliderFloat("##Texture",&settings.texture,.25f,3,"Grain density %.2fx");
   if(ImGui::IsItemHovered())ImGui::SetTooltip("Lower: separate tiny ticks. Higher: a finer scrape.\nSliding speed also controls the grain rate.");
@@ -43,14 +43,44 @@ static void audioPanel(Renderer&r,AudioSettings&settings,bool&open,bool saveFail
   ImGui::TextWrapped(saveFailed?"Could not save settings beside the app.":"Changes apply live and are saved automatically.");
  }ImGui::End();
 }
-static void hud(Renderer&r,CrystalScene&s,GlassAudio&audio,AudioSettings&settings,bool&showAudio,bool&reform,bool&show,float fps,int hovered){
+static void materialPanel(Renderer&r,CrystalScene&s,bool&open,bool saveFailed){
+ if(!open)return;
+ ImGui::SetNextWindowPos({float(r.width)-395,25},ImGuiCond_FirstUseEver);
+ ImGui::SetNextWindowSize({370,0});ImGui::SetNextWindowSizeConstraints({370,0},{370,std::max(250.f,float(r.height)-75)});
+ if(ImGui::Begin("Materials",&open,ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoResize)){
+  auto&a=s.appearance;ImGui::TextDisabled("CRYSTAL PIECES");int preset=a.finish;ImGui::SetNextItemWidth(-1);
+  if(ImGui::Combo("##Finish",&preset,"Flat crystal\0Rubbery\0Stony\0Papery\0"))a.preset(preset);
+  ImGui::TextWrapped("Choose a starting finish, then adjust its properties.");
+  ImGui::TextDisabled("INTERIOR TRANSPARENCY");ImGui::SetNextItemWidth(-1);ImGui::SliderFloat("##Transparency",&a.transparency,0,1,"%.2f");
+  if(ImGui::IsItemHovered())ImGui::SetTooltip("0: opaque tinted solid. 1: clear tinted crystal.\nIntermediate values mix diffuse and transmitted light,\nwith additional absorption through the interior.");
+  ImGui::TextDisabled("SURFACE SHINE");ImGui::SetNextItemWidth(-1);ImGui::SliderFloat("##Shine",&a.shine,0,1,"%.2f");
+  if(ImGui::IsItemHovered())ImGui::SetTooltip("Low: broad, rough highlights / frosted transmission.\nHigh: polished highlights and sharp reflections.");
+  ImGui::TextDisabled("SURFACE REFLECTANCE");ImGui::SetNextItemWidth(-1);ImGui::SliderFloat("##Reflectance",&a.reflectance,0,1,"%.2f");
+  if(ImGui::IsItemHovered())ImGui::SetTooltip("Reflection strength when viewed straight on.\nAbout 0.04 is typical glass; 1 is mirror-like.\nThis artistic control is independent of the refraction index.");
+  ImGui::TextDisabled("SURFACE STRUCTURE");ImGui::BeginDisabled(a.finish==0);ImGui::SetNextItemWidth(-1);ImGui::SliderFloat("##Structure",&a.structure,0,1,"%.2f");ImGui::EndDisabled();
+  ImGui::Spacing();ImGui::Separator();ImGui::Spacing();ImGui::TextDisabled("FOUR SIDE WALLS");
+  constexpr const char*choices="Invisible (glass sound)\0Paper\0Stone\0Metal\0";
+  int all=a.walls[0];for(int wall:a.walls)if(wall!=all){all=-1;break;}
+  ImGui::SetNextItemWidth(-1);if(ImGui::BeginCombo("##AllWalls",all<0?"Mixed wall finishes":all==0?"All: invisible":all==1?"All: paper":all==2?"All: stone":"All: metal")){
+   const char*names[]={"All: invisible","All: paper","All: stone","All: metal"};for(int i=0;i<4;i++)if(ImGui::Selectable(names[i],all==i))a.walls.fill(i);ImGui::EndCombo();
+  }
+  if(ImGui::CollapsingHeader("Set walls individually")){
+   const char*names[]={"Bottom at start","Top at start","Left at start","Right at start"};for(int i=0;i<4;i++){ImGui::TextDisabled("%s",names[i]);ImGui::PushID(i);ImGui::SetNextItemWidth(-1);ImGui::Combo("##Wall",&a.walls[i],choices);ImGui::PopID();}
+  }
+  ImGui::TextWrapped("These four walls rotate with the frame. The two end walls stay invisible. All walls remain rigid.");
+  ImGui::Spacing();if(ImGui::Button("Reset materials",{-1,32}))a=MaterialSettings{};
+  ImGui::TextWrapped(saveFailed?"Could not save materials beside the app.":"Changes apply live and are saved automatically.");
+ }ImGui::End();
+}
+static void hud(Renderer&r,CrystalScene&s,GlassAudio&audio,AudioSettings&settings,bool&showAudio,bool&showMaterials,bool&reform,bool&show,float fps,int hovered){
  ImGui::SetNextWindowPos({25,25},ImGuiCond_Always);ImGui::SetNextWindowSize({300,0});ImGui::SetNextWindowBgAlpha(.90f);
  ImGui::SetNextWindowSizeConstraints({300,0},{300,std::max(200.f,float(r.height)-110)});
  ImGui::Begin("Crystal controls",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_AlwaysAutoResize);
- ImGui::TextDisabled("MATERIAL STUDY   /   06");ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);ImGui::TextUnformatted("Crystal Tumbler");ImGui::PopFont();ImGui::TextDisabled("ROTATING CUBE / INVISIBLE WALLS");ImGui::Spacing();ImGui::Separator();ImGui::Spacing();
+ ImGui::TextDisabled("MATERIAL STUDY   /   07");ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);ImGui::TextUnformatted("Crystal Tumbler");ImGui::PopFont();ImGui::TextDisabled("ROTATING CUBE / MATERIALS");ImGui::Spacing();ImGui::Separator();ImGui::Spacing();
  ImGui::TextWrapped("%s",r.adapterName.c_str());ImGui::TextDisabled("%.1f GPU ms   |   %.1f fps",r.gpuMs,fps);ImGui::TextDisabled("%d spp/frame   |   %d total",r.spp,r.samples);ImGui::TextDisabled(r.samples>=r.maxSamples?"Converged / GPU resting":r.moving?(r.stableOptics?"Motion / deterministic crystal optics":"Motion / temporal reconstruction"):(r.stableOptics?"Refining / crystal antialiasing":"Refining / progressive path tracing"));ImGui::Spacing();
  if(ImGui::Button("Drop again",{118,36}))reform=true;ImGui::SameLine();if(ImGui::Button(s.paused?"Resume":"Pause",{118,36}))s.paused=!s.paused;
- ImGui::Checkbox("Glass sound",&settings.enabled);audioLevel("##AmbientVolume",settings.volume,"Volume %.0f%%");if(ImGui::Button("Audio settings...",{-1,30}))showAudio=!showAudio;if(!audio.available())ImGui::TextDisabled("%s",audio.status().c_str());
+ ImGui::Checkbox("Contact sound",&settings.enabled);audioLevel("##AmbientVolume",settings.volume,"Volume %.0f%%");if(ImGui::Button("Audio settings...",{-1,30}))showAudio=!showAudio;if(!audio.available())ImGui::TextDisabled("%s",audio.status().c_str());
+ if(ImGui::Button("Materials...",{-1,34})){showMaterials=!showMaterials;if(showMaterials)showAudio=false;}
  ImGui::TextDisabled("CELL COUNT");ImGui::SetNextItemWidth(-1);if(ImGui::SliderInt("##Cells",&s.density,24,96)&&!ImGui::IsItemActive())reform=true;if(ImGui::IsItemDeactivatedAfterEdit())reform=true;
  ImGui::TextDisabled("INDEX OF REFRACTION");ImGui::SetNextItemWidth(-1);if(ImGui::SliderFloat("##IOR",&s.ior,1.01f,2.5f,"%.3f")){s.updateOptics();r.setScene(s);}
  ImGui::TextDisabled("BEVEL WIDTH / ALL EDGES");ImGui::SetNextItemWidth(-1);ImGui::SliderFloat("##Bevel",&s.bevel,0,.18f,"%.3f");if(ImGui::IsItemDeactivatedAfterEdit()){s.updateBevel();r.setScene(s);}
@@ -74,17 +104,17 @@ static void hud(Renderer&r,CrystalScene&s,GlassAudio&audio,AudioSettings&setting
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
  wchar_t exe[MAX_PATH];GetModuleFileName(nullptr,exe,MAX_PATH);std::wstring directory=std::filesystem::path(exe).parent_path().wstring()+L"\\";
- std::ofstream log(directory+L"CrystalSlab.log");std::wstring capturePath;int targetSamples=192,fixedSPP=0;bool selftest=false,motionTest=false,dynamicTest=false,stabilityTest=false,noCaustics=false,raw=false,pathTracing=false;float initialYaw=.34f,settleTime=10;uint32_t width=1440,height=900;
- int argc;LPWSTR*argv=CommandLineToArgvW(GetCommandLineW(),&argc);for(int i=1;i<argc;i++){std::wstring a=argv[i];if(a==L"--capture"&&i+1<argc)capturePath=argv[++i];else if(a==L"--samples"&&i+1<argc)targetSamples=_wtoi(argv[++i]);else if(a==L"--width"&&i+1<argc)width=_wtoi(argv[++i]);else if(a==L"--height"&&i+1<argc)height=_wtoi(argv[++i]);else if(a==L"--spp"&&i+1<argc)fixedSPP=_wtoi(argv[++i]);else if(a==L"--yaw"&&i+1<argc)initialYaw=float(_wtof(argv[++i]));else if(a==L"--settle"&&i+1<argc)settleTime=float(_wtof(argv[++i]));else if(a==L"--selftest")selftest=true;else if(a==L"--dynamic-test")dynamicTest=true;else if(a==L"--motion-test")motionTest=true;else if(a==L"--stability-test")stabilityTest=true;else if(a==L"--no-caustics")noCaustics=true;else if(a==L"--raw")raw=true;else if(a==L"--path-tracing")pathTracing=true;}LocalFree(argv);interactive=capturePath.empty();
+ std::ofstream log(directory+L"CrystalSlab.log");std::wstring capturePath;int targetSamples=192,fixedSPP=0;bool selftest=false,motionTest=false,dynamicTest=false,stabilityTest=false,noCaustics=false,raw=false,pathTracing=false;float initialYaw=.34f,settleTime=10;uint32_t width=1440,height=900;MaterialSettings captureMaterials;
+ int argc;LPWSTR*argv=CommandLineToArgvW(GetCommandLineW(),&argc);for(int i=1;i<argc;i++){std::wstring a=argv[i];if(a==L"--capture"&&i+1<argc)capturePath=argv[++i];else if(a==L"--samples"&&i+1<argc)targetSamples=_wtoi(argv[++i]);else if(a==L"--width"&&i+1<argc)width=_wtoi(argv[++i]);else if(a==L"--height"&&i+1<argc)height=_wtoi(argv[++i]);else if(a==L"--spp"&&i+1<argc)fixedSPP=_wtoi(argv[++i]);else if(a==L"--yaw"&&i+1<argc)initialYaw=float(_wtof(argv[++i]));else if(a==L"--settle"&&i+1<argc)settleTime=float(_wtof(argv[++i]));else if(a==L"--material"&&i+1<argc){std::wstring name=argv[++i];captureMaterials.preset(name==L"rubber"?1:name==L"stone"?2:name==L"paper"?3:0);}else if(a==L"--transparency"&&i+1<argc)captureMaterials.transparency=float(_wtof(argv[++i]));else if(a==L"--shine"&&i+1<argc)captureMaterials.shine=float(_wtof(argv[++i]));else if(a==L"--reflectance"&&i+1<argc)captureMaterials.reflectance=float(_wtof(argv[++i]));else if(a==L"--walls"&&i+1<argc){std::wstring name=argv[++i];captureMaterials.walls.fill(name==L"paper"?1:name==L"stone"?2:name==L"metal"?3:0);}else if(a==L"--mixed-walls")captureMaterials.walls={1,2,3,0};else if(a==L"--selftest")selftest=true;else if(a==L"--dynamic-test")dynamicTest=true;else if(a==L"--motion-test")motionTest=true;else if(a==L"--stability-test")stabilityTest=true;else if(a==L"--no-caustics")noCaustics=true;else if(a==L"--raw")raw=true;else if(a==L"--path-tracing")pathTracing=true;}LocalFree(argv);interactive=capturePath.empty();
  try{
   CoInitializeEx(nullptr,COINIT_MULTITHREADED);SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
   WNDCLASS wc{};wc.hInstance=instance;wc.lpfnWndProc=WindowProc;wc.lpszClassName=L"CrystalNativeDXR";wc.hCursor=LoadCursor(nullptr,IDC_ARROW);RegisterClass(&wc);RECT bounds{0,0,LONG(width),LONG(height)};AdjustWindowRect(&bounds,WS_OVERLAPPEDWINDOW,FALSE);
   HWND window=CreateWindow(wc.lpszClassName,L"Crystal Tumbler | Native DXR",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,bounds.right-bounds.left,bounds.bottom-bounds.top,nullptr,nullptr,instance,nullptr);
   if(!window)throw std::runtime_error("Could not create the native application window");
-  CrystalScene scene;scene.create();if(!scene.geometryValid())throw std::runtime_error("Invalid 3D Voronoi geometry");if(!interactive&&!dynamicTest){for(int step=0;step<int(std::clamp(settleTime,0.f,180.f)*120);step++){scene.step(1.f/120);if(!scene.boundsValid(.003f))throw std::runtime_error("Rotating cube containment failed");}scene.paused=true;}Camera camera;camera.yaw=initialYaw;Renderer renderer;renderer.stableOptics=!pathTracing;renderer.caustics=!noCaustics;renderer.denoise=!raw;if(fixedSPP){renderer.spp=std::max(3,fixedSPP/3*3);renderer.automaticBudget=false;}if(!interactive)renderer.maxSamples=std::max(1536,targetSamples);renderer.init(window,width,height,directory,interactive);if(interactive){styleUI();ShowWindow(window,SW_SHOW);UpdateWindow(window);}renderer.setScene(scene);
+  auto materialSettingsPath=std::filesystem::path(directory)/L"MaterialSettings.ini";CrystalScene scene;scene.appearance=interactive?loadMaterialSettings(materialSettingsPath):sanitizeMaterialSettings(captureMaterials);scene.create();if(!scene.geometryValid())throw std::runtime_error("Invalid 3D Voronoi geometry");if(!interactive&&!dynamicTest){for(int step=0;step<int(std::clamp(settleTime,0.f,180.f)*120);step++){scene.step(1.f/120);if(!scene.boundsValid(.003f))throw std::runtime_error("Rotating cube containment failed");}scene.paused=true;}Camera camera;camera.yaw=initialYaw;Renderer renderer;renderer.stableOptics=!pathTracing;renderer.caustics=!noCaustics;renderer.denoise=!raw;if(fixedSPP){renderer.spp=std::max(3,fixedSPP/3*3);renderer.automaticBudget=false;}if(!interactive)renderer.maxSamples=std::max(1536,targetSamples);renderer.init(window,width,height,directory,interactive);if(interactive){styleUI();ShowWindow(window,SW_SHOW);UpdateWindow(window);}renderer.setScene(scene);
   log<<"Adapter: "<<renderer.adapterName<<"\nBackend: DirectX 12 inline ray queries / DXR 1.1\nTriangles: "<<scene.triangles.size()<<"\nSpotlights: "<<scene.lights.size()<<"; photon paths: "<<renderer.photons<<"\n";log.flush();
   if(selftest){scene.paused=false;for(int i=0;i<14400;i++){scene.step(1.f/120);if(!scene.boundsValid(.003f))throw std::runtime_error("Rotating cube containment failed");}scene.paused=true;renderer.setScene(scene);log<<"Rotating containment test: PASS, 120 seconds\n";}
-  auto audioSettingsPath=std::filesystem::path(directory)/L"AudioSettings.ini";AudioSettings audioSettings=loadAudioSettings(audioSettingsPath);bool showAudio=false,audioDirty=false,audioSaveFailed=false;auto audioChanged=std::chrono::steady_clock::now();
+  auto audioSettingsPath=std::filesystem::path(directory)/L"AudioSettings.ini";AudioSettings audioSettings=loadAudioSettings(audioSettingsPath);bool showAudio=false,audioDirty=false,audioSaveFailed=false;auto audioChanged=std::chrono::steady_clock::now();bool showMaterials=false,materialDirty=false,materialSaveFailed=false;auto materialChanged=audioChanged;
   GlassAudio sound;uint32_t soundRevision=scene.revision;if(interactive){sound.setSettings(audioSettings);sound.start();sound.configure(describeSound(scene));scene.soundSink=[&](const SoundFrame&frame){sound.submit(frame);};log<<"Audio: "<<sound.status()<<"; volume "<<audioSettings.volume*100<<"%; decay "<<audioSettings.decayMs<<" ms\n";log.flush();}
   auto start=std::chrono::steady_clock::now(),previous=start;MSG message{};bool running=true,showUI=true;float fps=0;int hovered=-1;uint32_t seed=73192,testFrame=0;double gpuSum=0;
   while(running){
@@ -93,7 +123,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
    auto now=std::chrono::steady_clock::now();float dt=std::chrono::duration<float>(now-previous).count();previous=now;fps=fps*.94f+(1/std::max(dt,.001f))*.06f;
    bool reform=false;
    if(interactive){
-    ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();auto&io=ImGui::GetIO();auto previousAudioSettings=audioSettings;
+    ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();auto&io=ImGui::GetIO();auto previousAudioSettings=audioSettings;auto previousMaterials=scene.appearance;
     if(ImGui::IsKeyPressed(ImGuiKey_Tab))showUI=!showUI;
     if(!io.WantCaptureKeyboard){if(ImGui::IsKeyPressed(ImGuiKey_R))reform=true;if(ImGui::IsKeyPressed(ImGuiKey_Space))scene.paused=!scene.paused;if(ImGui::IsKeyPressed(ImGuiKey_M))audioSettings.enabled=!audioSettings.enabled;}
     if(!io.WantCaptureMouse){
@@ -102,7 +132,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
      float x=io.MousePos.x/renderer.width*2-1,y=1-io.MousePos.y/renderer.height*2;hovered=scene.pick(camera.origin(),camera.ray(x,y,float(renderer.width)/renderer.height));
      if(ImGui::IsMouseClicked(0)&&scene.extract(hovered))renderer.setScene(scene);
     }else hovered=-1;
-    if(showUI){hud(renderer,scene,sound,audioSettings,showAudio,reform,showUI,fps,hovered);audioPanel(renderer,audioSettings,showAudio,audioSaveFailed);}renderer.previewEdit=ImGui::IsAnyItemActive();
+    if(showUI){hud(renderer,scene,sound,audioSettings,showAudio,showMaterials,reform,showUI,fps,hovered);audioPanel(renderer,audioSettings,showAudio,audioSaveFailed);materialPanel(renderer,scene,showMaterials,materialSaveFailed);}renderer.previewEdit=ImGui::IsAnyItemActive();
+    if(scene.appearance!=previousMaterials){scene.updateMaterials();renderer.setScene(scene);materialDirty=true;materialChanged=now;}
+    if(materialDirty&&!ImGui::IsAnyItemActive()&&std::chrono::duration<float>(now-materialChanged).count()>.3f){materialSaveFailed=!saveMaterialSettings(materialSettingsPath,scene.appearance);materialDirty=false;}
     if(audioSettings!=previousAudioSettings){sound.setSettings(audioSettings);audioDirty=true;audioChanged=now;}
     if(audioDirty&&!ImGui::IsAnyItemActive()&&std::chrono::duration<float>(now-audioChanged).count()>.3f){audioSaveFailed=!saveAudioSettings(audioSettingsPath,audioSettings);audioDirty=false;}
     ImGui::Render();
@@ -117,7 +149,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
    if(interactive&&ImGui::IsKeyPressed(ImGuiKey_F9)){auto time=std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());std::wstringstream name;name<<directory<<L"Crystal-"<<time<<L".png";renderer.capture(name.str());}
    if(!interactive&&((stabilityTest&&testFrame>=61)||((motionTest&&testFrame>=60)||(dynamicTest&&testFrame>=360))||(!stabilityTest&&!motionTest&&!dynamicTest&&int(renderer.samples)>=targetSamples))){if(!scene.boundsValid())throw std::runtime_error("Physics containment test failed");renderer.capture(capturePath);log<<"Rendered "<<renderer.samples<<" samples at "<<width<<"x"<<height<<" in "<<std::chrono::duration<float>(std::chrono::steady_clock::now()-start).count()<<" seconds\nGPU compute: "<<renderer.gpuMs<<" ms; mean "<<gpuSum/testFrame<<" ms; final batch "<<renderer.spp<<" spp\nMotion test: "<<(motionTest?"YES":"NO")<<"; dynamic test: "<<(dynamicTest?"PASS":"NO")<<"\n";break;}
   }
-  if(interactive&&audioDirty)saveAudioSettings(audioSettingsPath,audioSettings);
+  if(interactive&&audioDirty)saveAudioSettings(audioSettingsPath,audioSettings);if(interactive&&materialDirty)saveMaterialSettings(materialSettingsPath,scene.appearance);
   scene.soundSink={};log<<"Audio frames submitted: "<<sound.renderedFrames()<<"; dropped updates: "<<sound.droppedFrames()<<"\n";sound.stop();renderer.shutdown();DestroyWindow(window);CoUninitialize();return 0;
  }catch(const std::exception&e){log<<"ERROR: "<<e.what()<<"\n";log.flush();if(interactive)MessageBoxA(nullptr,e.what(),"Crystal Slab",MB_ICONERROR);return 1;}
 }
