@@ -115,7 +115,7 @@ void CrystalScene::create(uint32_t seed){
  // Keep the entire source inside an inscribed sphere: even the single-cell case
  // can rotate without presenting an impossible fit to the six-wall constraint.
  objectScale=std::min(1.f,(boxHalf-.15f)/radius);for(auto&f:source){for(auto&p:f.vertices)p=p*objectScale;f.distance*=objectScale;}
- objectVolume=0;for(auto&f:source)for(size_t k=1;k+1<f.vertices.size();k++)objectVolume+=dot(f.vertices[0],cross(f.vertices[k],f.vertices[k+1]))/6;
+ sourceSize=V3{width,height,depth}*objectScale;objectVolume=0;for(auto&f:source)for(size_t k=1;k+1<f.vertices.size();k++)objectVolume+=dot(f.vertices[0],cross(f.vertices[k],f.vertices[k+1]))/6;
  clearPhysics();cells.clear();bonds.clear();extracted=0;simulating=true;paused=false;simulationTime=0;boxAngle=0;accumulator=0;revision++;soundGeneration++;soundLastHit.fill(-1000);soundLastSeen.fill(-1000);makeStudio();
  configuration=std::make_unique<btDefaultCollisionConfiguration>();dispatcher=std::make_unique<btCollisionDispatcher>(configuration.get());broadphase=std::make_unique<btDbvtBroadphase>();solver=std::make_unique<btSequentialImpulseConstraintSolver>();world=std::make_unique<btDiscreteDynamicsWorld>(dispatcher.get(),broadphase.get(),solver.get(),configuration.get());world->setGravity({0,-9.81f,0});world->getSolverInfo().m_numIterations=35;world->getSolverInfo().m_splitImpulse=true;
  auto wall=[&](V3 center,V3 half){
@@ -132,12 +132,12 @@ void CrystalScene::create(uint32_t seed){
    bool good=true;for(auto q:seeds)if(dot(p-q,p-q)<spacing*spacing){good=false;break;}
    if(good||++accepted>=1500){placed=true;break;}
   }if(!placed)throw std::runtime_error("Could not place Voronoi seeds");seeds.push_back(p);}
- V3 colors[]={{.76f,.98f,.94f},{.94f,.83f,.99f},{.99f,.94f,.72f},{.72f,.94f,.99f},{.99f,.80f,.88f},{.91f,.99f,.79f},{.88f,.91f,.99f}};
+
  for(int i=0;i<density;i++){
   Cell c;c.id=i;c.faces=source;auto a=seeds[i];for(int j=0;j<density;j++)if(j!=i){auto b=seeds[j];float len=std::sqrt(dot(b-a,b-a));clip(c.faces,(b-a)/len,(dot(b,b)-dot(a,a))*.5f/len,j);}
   // Signed tetrahedra give the mass centroid and volume of each closed polyhedron.
   V3 moment{};float volume=0;for(auto&f:c.faces)for(size_t k=1;k+1<f.vertices.size();k++){V3 p=f.vertices[0],q=f.vertices[k],r=f.vertices[k+1];float v=dot(p-a,cross(q-a,r-a))/6;volume+=v;moment=moment+(a+p+q+r)*(v*.25f);}if(volume<1e-5f)throw std::runtime_error("Degenerate Voronoi volume");c.volume=volume;c.center=moment/volume;
-  V3 col=colors[rng()%7],sigma{-std::log(col.x)*1.25f,-std::log(col.y)*1.25f,-std::log(col.z)*1.25f};c.tint=col;c.material=int(materials.size());materials.push_back(material(col,2,0,ior,0,sigma,.009f));makeCell(c);cells.push_back(std::move(c));
+  c.colorKey=rng();c.material=int(materials.size());materials.push_back(material({1,1,1},2,0,ior,0,{},.009f));makeCell(c);cells.push_back(std::move(c));
  }
  // Cells are released independently into the larger container; no weld bonds.
  updateMaterials();
@@ -145,10 +145,12 @@ void CrystalScene::create(uint32_t seed){
 void CrystalScene::updateOptics(){updateMaterials();}
 void CrystalScene::updateMaterials(){
  appearance=sanitizeMaterialSettings(appearance);
+ bool contactChanged=false;
  const float friction[]={.62f,.95f,.80f,.55f},bounce[]={.025f,.12f,.018f,.008f};
  const float pigment[]={.20f,.12f,.16f,.27f};
- for(auto&c:cells){auto&m=materials[c.material];V3 color{std::pow(c.tint.x,6.f),std::pow(c.tint.y,6.f),std::pow(c.tint.z,6.f)};m.colorType=F4(color*pigment[appearance.finish],2);m.params.x=1-appearance.shine;m.params.y=ior;
+ for(auto&c:cells){auto&m=materials[c.material];uint32_t key=c.colorKey+uint32_t(appearance.colorSeed)*0x9e3779b9u;key^=key>>16;key*=0x7feb352du;key^=key>>15;auto tint=colorPalette(appearance.palette)[key%ColorStopCount];c.tint={std::pow(tint[0],appearance.colorIntensity),std::pow(tint[1],appearance.colorIntensity),std::pow(tint[2],appearance.colorIntensity)};m.absorption={-std::log(c.tint.x)*1.25f,-std::log(c.tint.y)*1.25f,-std::log(c.tint.z)*1.25f,.009f};m.sourceCenter=F4(c.center,pigment[appearance.finish]);V3 color{std::pow(c.tint.x,6.f),std::pow(c.tint.y,6.f),std::pow(c.tint.z,6.f)};m.colorType=F4(color*pigment[appearance.finish],2);m.params.x=1-appearance.shine;m.params.y=ior;
   m.surface={appearance.transparency,appearance.reflectance,float(appearance.finish),appearance.structure};
+  contactChanged|=c.body->getFriction()!=friction[appearance.finish]||c.body->getRestitution()!=bounce[appearance.finish];
   c.body->setFriction(friction[appearance.finish]);c.body->setRestitution(bounce[appearance.finish]);
  }
  panelTriangles.clear();float h=boxHalf;
@@ -159,6 +161,7 @@ void CrystalScene::updateMaterials(){
   else if(style==2)m=material({.32f,.37f,.40f},0,.84f);
   else m=material({.72f,.76f,.81f},1,.23f);
   if(style){m.surface={0,style==1?.025f:.04f,float(style==1?3:style==2?2:4),.8f};m.params.w=float(10+i);}
+  contactChanged|=boxWalls[i]->getFriction()!=wallFriction[style]||boxWalls[i]->getRestitution()!=wallBounce[style];
   boxWalls[i]->setFriction(wallFriction[style]);boxWalls[i]->setRestitution(wallBounce[style]);
   if(!style&&!appearance.glassWalls)continue;
   // Keep a small air gap outside the constraint so flat crystal faces never
@@ -172,7 +175,7 @@ void CrystalScene::updateMaterials(){
   if(i==5)box(panelTriangles,{-h,-h,p},{h,h,p+t},wallMaterials[i]);
  }
  // Refresh cached contact friction without moving the existing bodies.
- if(world)for(auto&body:bodies)if(body->getBroadphaseHandle())world->getBroadphase()->getOverlappingPairCache()->cleanProxyFromPairs(body->getBroadphaseHandle(),dispatcher.get());
+ if(contactChanged&&world)for(auto&body:bodies)if(body->getBroadphaseHandle())world->getBroadphase()->getOverlappingPairCache()->cleanProxyFromPairs(body->getBroadphaseHandle(),dispatcher.get());
  revision++;rebuild();
 }
 void CrystalScene::updateBevel(){

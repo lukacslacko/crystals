@@ -7,11 +7,27 @@ static void require(bool ok,const char*message){if(!ok)throw std::runtime_error(
 static V3 localPoint(const Material&m,V3 p){return {dot(m.localX.xyz(),p)+m.localX.w,dot(m.localY.xyz(),p)+m.localY.w,dot(m.localZ.xyz(),p)+m.localZ.w};}
 static void near(V3 a,V3 b){require(dot(a-b,a-b)<1e-8f,"Texture coordinates slipped relative to the body");}
 int main(){try{
- static_assert(sizeof(Material)==112,"CPU/GPU material layout mismatch");
+ static_assert(sizeof(Material)==128,"CPU/GPU material layout mismatch");
+ for(float yaw:{0.f,.34f,1.3f,1.5707963f,3.14f}){Camera camera;camera.yaw=yaw;auto target=camera.target,origin=camera.origin(),forward=camera.forward();float distance=camera.distance;camera.pan(40,-25,900);auto delta=camera.target-target;
+  require(camera.target.z==target.z&&camera.distance==distance,"Camera pan left the XY plane or changed zoom");near(camera.origin()-origin,delta);near(camera.forward(),forward);require(std::isfinite(delta.x)&&std::isfinite(delta.y)&&std::abs(delta.x)<6&&std::abs(delta.y)<6,"Pan was unstable near an edge-on view");
+  if(std::abs(camera.right().x)>.2f){float units=2*.345f*distance/900;require(std::abs(dot(delta,camera.right())+40*units)<1e-4f&&std::abs(dot(delta,camera.up())+25*units)<1e-4f,"Pan direction or screen scale was wrong");}
+ }
  MaterialSettings invalid;invalid.finish=100;invalid.transparency=-1;invalid.shine=2;invalid.reflectance=std::numeric_limits<float>::quiet_NaN();invalid.walls={-1,10,2,1};auto clean=sanitizeMaterialSettings(invalid);
  require(clean.finish==3&&clean.transparency==0&&clean.shine==1&&clean.reflectance==.045f&&clean.walls[0]==0&&clean.walls[1]==3,"Settings range sanitization failed");
- auto file=std::filesystem::temp_directory_path()/"CrystalMaterialValidation.ini";MaterialSettings saved;saved.preset(2);saved.transparency=.37f;saved.reflectance=.28f;saved.walls={1,2,3,0};saved.glassWalls=true;saved.blackBackground=true;require(saveMaterialSettings(file,saved)&&loadMaterialSettings(file)==saved,"Material preferences failed to round-trip");std::filesystem::remove(file);
+ invalid.colorMode=99;invalid.palette=99;invalid.colorSeed=-1;invalid.colorIntensity=std::numeric_limits<float>::quiet_NaN();invalid.gradientScale=100;invalid.gradientOffset=-1;invalid.gradientYaw=999;invalid.gradientTilt=-999;invalid.ambientBrightness=999;clean=sanitizeMaterialSettings(invalid);
+ require(clean.colorMode==4&&clean.palette==6&&clean.colorSeed==0&&clean.colorIntensity==1&&clean.gradientScale==4&&clean.gradientOffset==0&&clean.gradientYaw==180&&clean.gradientTilt==-90&&clean.ambientBrightness==8,"Color / ambient ranges were not sanitized");
+ auto file=std::filesystem::temp_directory_path()/"CrystalMaterialValidation.ini";MaterialSettings saved;saved.preset(2);saved.transparency=.37f;saved.reflectance=.28f;saved.walls={1,2,3,0};saved.glassWalls=true;saved.blackBackground=true;saved.colorMode=3;saved.palette=6;saved.colorSeed=451;saved.colorIntensity=1.3f;saved.gradientScale=2.3f;saved.gradientOffset=.7f;saved.gradientYaw=-120;saved.gradientTilt=16;saved.ambientLight=false;saved.ambientBrightness=4.6f;require(saveMaterialSettings(file,saved)&&loadMaterialSettings(file)==saved,"Material preferences failed to round-trip");std::filesystem::remove(file);
  CrystalScene scene;scene.create();auto original=describeSound(scene);auto pose=scene.cells[0].body->getWorldTransform();auto generation=scene.soundGeneration;
+ auto defaultTint=scene.cells[0].tint;
+ for(int palette=0;palette<ColorPaletteCount;palette++){
+  for(auto tint:colorPalette(palette))for(float channel:tint)require(channel>0&&channel<=1,"Palette has invalid transmission tint");
+  scene.appearance.palette=palette;scene.updateMaterials();auto first=scene.cells[0].tint;scene.updateMaterials();near(scene.cells[0].tint,first);
+  for(auto&c:scene.cells){auto&m=scene.materials[c.material];require(m.sourceCenter.w>0,"Crystal missing original-object coloring coordinates");near(m.sourceCenter.xyz(),c.center);require(std::isfinite(m.absorption.x)&&m.absorption.x>=0,"Invalid absorption coefficient");}
+ }
+ scene.appearance.palette=0;scene.updateMaterials();near(scene.cells[0].tint,defaultTint);std::vector<V3>originalTints;for(auto&c:scene.cells)originalTints.push_back(c.tint);scene.appearance.colorSeed=17;scene.updateMaterials();bool shuffled=false;for(auto&c:scene.cells)if(dot(c.tint-originalTints[c.id],c.tint-originalTints[c.id])>.001f)shuffled=true;require(shuffled,"Shuffle did not assign palette colors");
+ scene.appearance.colorIntensity=0;scene.updateMaterials();for(auto&c:scene.cells){near(c.tint,{1,1,1});near(scene.materials[c.material].absorption.xyz(),{});}scene.appearance.colorIntensity=1;
+ for(int mode=0;mode<5;mode++){scene.appearance.colorMode=mode;scene.updateMaterials();require(scene.soundGeneration==generation,"Color mode restarted physics");require((scene.cells[0].body->getWorldTransform().getOrigin()-pose.getOrigin()).length()<1e-6f,"Color mode moved a crystal");}
+ for(int id:scene.wallMaterials)require(scene.materials[id].sourceCenter.w==0,"Crystal coloring was applied to a wall");
  for(int finish=0;finish<4;finish++){
   scene.appearance.preset(finish);scene.appearance.walls.fill(finish);scene.updateMaterials();
   require(scene.soundGeneration==generation,"Material change restarted the simulation");
@@ -46,5 +62,10 @@ int main(){try{
  auto toV=[](btVector3 v){return V3{v.x(),v.y(),v.z()};};V3 q{.3f,.6f,-.4f};
  for(int id:scene.wallMaterials)near(localPoint(scene.materials[id],toV(scene.boxTransform()*btVector3{q.x,q.y,q.z})),q);
  for(auto&c:scene.cells)near(localPoint(scene.materials[c.material],toV(c.body->getWorldTransform()*btVector3{q.x,q.y,q.z})),q);
+ // The same original point on a Voronoi cut must map identically from both
+ // independently moved pieces, so gradients cannot jump or swim as they tumble.
+ for(auto&c:scene.cells)for(auto&face:c.faces)if(face.neighbor>=0){auto&other=scene.cells[face.neighbor];V3 source=face.vertices.front();
+  for(auto*cell:{&c,&other}){auto local=source-cell->center;auto world=toV(cell->body->getWorldTransform()*btVector3{local.x,local.y,local.z});auto&m=scene.materials[cell->material];near(localPoint(m,world)+m.sourceCenter.xyz(),source);}
+ }
  std::cout<<"PASS: material ranges/persistence, opaque/transmissive endpoints, independent walls, local texture coordinates, friction/acoustics, pose preservation and 10 seconds of rotating containment.\n";return 0;
 }catch(const std::exception&e){std::cerr<<"FAIL: "<<e.what()<<"\n";return 1;}}

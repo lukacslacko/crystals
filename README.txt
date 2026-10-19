@@ -148,6 +148,9 @@ Pause / Space: freeze both crystals and cube; sound tails fade. Resume continues
 Cube rotation: -12 to +12 degrees per second. Zero stops the motor while gravity
 and free-body physics continue. Negative values reverse its direction.
 Left click: extract a crystal. Right drag: orbit. Wheel: zoom.
+Middle drag: pan in world XY, perpendicular to the cube's rotation axis (Z).
+  Pan preserves camera direction and zoom; gain is bounded near edge-on views.
+Home: center the camera on the cube, preserving orbit and zoom.
 Tab: hide/show the controls. M: mute/unmute. F9: save a clean PNG photograph.
 Cell count: 1 to 96, applied on release.
 Original object: box, faceted ellipsoid, cylinder (Y axis), or octahedron.
@@ -157,9 +160,9 @@ Original object: box, faceted ellipsoid, cylinder (Y axis), or octahedron.
   Equal ellipsoid dimensions give a faceted sphere. Restore original slab
   returns to the 8 x 5 x 2.8 box. These controls rebuild and drop the crystals.
   Object dimensions, shape and cell count are session settings.
-Float in blackness: remove the floor, backdrop and ambient environment from
-  camera, reflection and refraction rays; retain the spotlight and cube.
-  Saved with material preferences.
+Float in blackness: remove the floor and backdrop, with a black camera background.
+  Ambient illumination remains available through Colors & lighting; disable it
+  there for spotlight-only lighting. Saved with material preferences.
 Fullscreen / F11: borderless fullscreen on the current monitor.
   Escape leaves fullscreen; the previous window position and size are restored.
 Antialiasing: enabled by default. A spatial edge filter runs after tone mapping,
@@ -170,6 +173,29 @@ Index of refraction: 1.01 to 2.50, applied live to camera rays and caustics.
 Bevel width: 0 to 0.18, applied on release to every original crystal edge,
 including the hidden edges. This updates the mesh and collision hull, preserving
 its pose. Small cells cap their local bevel width to remain valid solids.
+
+COLORS AND AMBIENT LIGHT
+
+Colors & lighting opens a panel with seven palettes: Pastel glass, Jewel tones,
+Ocean, Aurora, Ember, Earth, and Spectrum. Random solid pieces assigns one tint
+per cell; Shuffle piece colors changes assignments without restarting physics.
+Four gradient styles paint the original object throughout its volume:
+  Directional gradient: palette along an axis, with azimuth/elevation controls.
+  Radial gradient: palette from the center outwards.
+  Three-axis color blend: eight palette colors blended across the XYZ corners.
+  Flowing bands: smooth color bands varying in all three dimensions.
+Color intensity: 0 to 2x (0 neutral, 1 palette, 2 deeper color).
+Gradient scale: 0.25 to 4x. Gradient offset: 0 to 1, with smooth mirrored repeats.
+Every fragment retains its original coordinates as it tumbles, so exposed cut
+faces and internal transmission carry the same continuous color field. Two fixed
+quadrature samples approximate absorption along each interior ray segment in
+camera, reflection/refraction, and photon paths; this adds no random volume noise.
+
+Ambient light: enabled by default. Brightness: 0 to 8x; 1x is the original studio
+fill level. It lights diffuse surfaces and reflections independently of the
+spotlight. It also works against the black background. The stable renderer uses
+an approximate diffuse fill; the stochastic renderer samples the environment.
+Colors and lighting apply live and are saved in MaterialSettings.ini.
 
 LIGHT AND RENDERING
 
@@ -197,6 +223,8 @@ The material build passes SceneValidation, AudioValidation and MaterialValidatio
 Material checks cover settings persistence/ranges, transparency endpoints, mixed
 wall visibility, picking occlusion, rigid-body pose preservation, friction/audio
 changes, and object-local texture coordinates after ten seconds of rotation.
+They also cover all color palettes, shuffling, color/ambient persistence, shared
+source coordinates across moved fragments, and camera panning within world XY.
 Native GPU captures were inspected for every preset, paper/stone/metal walls,
 partial transparency, mirror reflectance, and the stochastic rendering mode.
 A live mixed-wall run passed containment checks for 360 frames at 1440 x 900
@@ -241,7 +269,14 @@ also saves the first matching view as .first.png. --raw disables denoising.
 --cells sets the number of cells (1-96).
 --shape box|ellipsoid|cylinder|octahedron selects the original solid.
 --size WIDTH HEIGHT DEPTH sets its dimensions before fitting to the cube.
---black-background removes the floor, backdrop and environment light.
+--color-mode random|linear|radial|3d|flow selects the color distribution.
+--palette pastel|jewel|ocean|aurora|ember|earth|spectrum selects the colors.
+--color-intensity sets tint strength (0-2); --color-seed sets shuffle (0-1000000).
+--gradient-scale accepts 0.25-4; --gradient-offset accepts 0-1.
+--gradient-yaw (-180 to 180) and --gradient-tilt (-90 to 90) aim linear gradients.
+--ambient sets brightness (0-8) and enables ambient light; --no-ambient disables it.
+--pan DX DY pans by a pixel offset at the capture resolution, within world XY.
+--black-background removes the floor/backdrop and makes the camera background black.
 --no-aa disables the spatial antialiasing pass.
 Put a material preset before its numeric overrides. Capture mode uses defaults
 unless overridden; it does not load saved material preferences.

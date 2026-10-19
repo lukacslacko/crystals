@@ -11,6 +11,7 @@ struct alignas(256) GPUConstants {
  F4 origin,forward,right,up,settings;U4 counts,options;
  F4 lightPosition[4],lightDirection[4],lightColor[4];
  F4 previousOrigin,previousForward,previousRight,previousUp,renderParams,sceneParams;
+ F4 palette[ColorStopCount],colorSettings,gradientDirection,sourceScale;
 };
 class Renderer {
 public:

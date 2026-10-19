@@ -18,22 +18,30 @@ inline V3 norm(V3 a){return a/std::max(1e-20f,std::sqrt(dot(a,a)));}
 struct F4 {float x=0,y=0,z=0,w=0; F4()=default;F4(float a,float b,float c,float d=0):x(a),y(b),z(c),w(d){} F4(V3 v,float d=0):x(v.x),y(v.y),z(v.z),w(d){} V3 xyz()const{return{x,y,z};}};
 struct U4 {uint32_t x=0,y=0,z=0,w=0;};
 struct Triangle {F4 a,b,c,n;U4 meta;};
-struct Material {F4 colorType,params,absorption,surface;F4 localX{1,0,0,0},localY{0,1,0,0},localZ{0,0,1,0};};
+struct Material {F4 colorType,params,absorption,surface;F4 localX{1,0,0,0},localY{0,1,0,0},localZ{0,0,1,0};F4 sourceCenter;};
 struct SpotLight {V3 position,direction,intensity;float innerCos,outerCos,radius;};
 struct Face {std::vector<V3> vertices;V3 normal;float distance=0;int neighbor=-1;};
-struct Cell {int id=0,material=0;std::vector<Face> faces;std::vector<Triangle> local;std::vector<V3> hull;V3 center,tint;float volume=0;btRigidBody* body=nullptr;bool removed=false;};
+struct Cell {int id=0,material=0;uint32_t colorKey=0;std::vector<Face> faces;std::vector<Triangle> local;std::vector<V3> hull;V3 center,tint;float volume=0;btRigidBody* body=nullptr;bool removed=false;};
 struct Bond {int a,b;btTypedConstraint* joint=nullptr;float area=1;bool alive=true;};
 struct Camera {
  float yaw=.34f,pitch=.18f,distance=34.0f,aperture=0;V3 target{0,7.5f,0};
  V3 origin()const{return target+V3{std::sin(yaw)*std::cos(pitch),std::sin(pitch),std::cos(yaw)*std::cos(pitch)}*distance;}
  V3 forward()const{return norm(target-origin());} V3 right()const{return norm(cross(forward(),{0,1,0}));} V3 up()const{return cross(right(),forward());}
  V3 ray(float x,float y,float aspect)const{return norm(forward()+right()*(x*aspect*.345f)+up()*(y*.345f));}
+ void pan(float dx,float dy,float viewportHeight){
+  float units=2*.345f*distance/std::max(1.f,viewportHeight);auto r=right(),u=up();
+  // Solve the screen projection within world XY. Bound the gain near an edge-on
+  // view of that plane; Z and the orbit orientation remain unchanged.
+  float x=-dx*units*r.x/std::max(.04f,r.x*r.x),y=(dy*units-u.x*x)/std::max(.25f,u.y);
+  target.x+=x;target.y+=y;
+ }
 };
 class CrystalScene {
 public:
  static constexpr float GlassWallGap=.015f;
  std::vector<Triangle> triangles,staticTriangles,frameTriangles,panelTriangles;std::vector<Material> materials;std::vector<Cell> cells;std::vector<Bond>bonds;std::vector<SpotLight> lights;
  MaterialSettings appearance;std::array<int,6>wallMaterials{};
+ V3 sourceSize{8,5,2.8f}; // Actual source dimensions, frozen until the next drop.
  std::unique_ptr<btDefaultCollisionConfiguration> configuration;
  std::unique_ptr<btCollisionDispatcher> dispatcher;std::unique_ptr<btDbvtBroadphase> broadphase;
  std::unique_ptr<btSequentialImpulseConstraintSolver> solver;std::unique_ptr<btDiscreteDynamicsWorld> world;
