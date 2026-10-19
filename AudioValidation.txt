@@ -1,0 +1,8 @@
+PASS: resting silence, shape tuning, 20 ms release for every crystal/pane, speed-driven scrape grains, scrape stop, mute, finite samples, peak ceiling, real contact audio.
+Crystal fundamentals: 1625.16 to 2692.11 Hz; worst 20-25 ms release -43.8757 dB; residual RMS after 40 ms 1.49298e-05 relative to attack
+Scrape grains/second: 38 at 0.1 units/s; 336 at 2 units/s; physical mix grains 76725
+Contacts: crystal hits 1640; pane hits 193; scrape ticks 118888
+Settings: PASS decay, pitch, separate impact/scrape/wall levels, saved preferences, bounds; measured releases 4.60417 ms (5 ms setting), 88.0521 ms (100 ms setting)
+Onset spread: 16 unique starts for 16 simultaneous impacts; 0.8125 to 7.66667 ms; zero-spread alignment PASS; limiter latency 2 ms
+Ambient preview: GlassAmbient.wav; 24 s stereo 48 kHz; peak -1.41162 dBFS; active RMS -26.9825 dBFS; stress peak 0.85
+Device: XAudio2 / 48 kHz stereo; submitted 98400 frames; dropped 0

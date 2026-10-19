@@ -1,0 +1,15 @@
+/build*/
+/out/
+/.vs/
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.cso
+*.log
+*.wav
+*.zip
+AudioSettings.ini
+imgui.ini
+Crystal-*.png

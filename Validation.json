@@ -1,0 +1,60 @@
+{
+  "RotationDegreesPerSecond": 4,
+  "Container": "10.4-unit cube; metal edges and corners; six invisible kinematic walls",
+  "LiveTest": {
+    "Containment": "PASS each frame",
+    "FinalGpuMs": 13.8581,
+    "Frames": 360,
+    "Seconds": 5.77794,
+    "Resolution": "1440x900",
+    "FinalSamplesPerFrame": 9
+  },
+  "Preview": {
+    "SimulatedSeconds": 10,
+    "RenderSeconds": 3.46866,
+    "Resolution": "1920x1200",
+    "Samples": 1536
+  },
+  "Physics": "PASS, 120 seconds plus three 15-second cases",
+  "Axis": "world Z, horizontal and perpendicular to back wall",
+  "Audio": {
+    "Backend": "XAudio2, 48 kHz stereo",
+    "ModesPerBody": 6,
+    "PaneVoices": 6,
+    "DefaultLevelPercent": 75,
+    "PeakCeilingDbFS": -1.4116,
+    "CrystalFundamentalsHz": [
+      1625.16,
+      2692.11
+    ],
+    "Release20To25msDb": -43.8757,
+    "DecayControlMs": [
+      5,
+      500
+    ],
+    "PitchControlSemitones": [
+      -12,
+      12
+    ],
+    "SeparateLevels": "Impact, scraping, glass walls: 0-300%",
+    "ScrapeDensityControl": [
+      0.25,
+      3
+    ],
+    "SavedPreferences": "AudioSettings.ini",
+    "Reverb": false,
+    "ScrapeGrains": 76725,
+    "CrystalImpactExcitations": 1640,
+    "PaneImpactExcitations": 193,
+    "PreviewRmsDbFS": -26.9825,
+    "PreviewPeakDbFS": -1.41162,
+    "LoudnessIncreaseDb": 8.3619,
+    "DeviceTestFramesSubmitted": 98400,
+    "DroppedUpdates": 0,
+    "Validation": "PASS: loudness, modal decay, impact onset spread and zero-spread alignment, scraping, stop, mute, finite output, peak limiting, device streaming, live settings and persistence",
+    "AdditionalPreLimiterGain": 5,
+    "OnsetSpreadDefaultMs": 8,
+    "Limiter": "Stereo linked, 2 ms lookahead, 40 ms gain recovery",
+    "SimultaneousOnsetCheck": "16 distinct starts for 16 simultaneous hits; 0.8125-7.66667 ms"
+  }
+}

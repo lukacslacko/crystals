@@ -1,0 +1,5 @@
+Case 0: PASS; cells 56; seconds 120; speed 4; z motion 4.89576; 3D tilt 1.41343
+Case 1: PASS; cells 56; seconds 15; speed -6; z motion 4.01155; 3D tilt 1.3821
+Case 2: PASS; cells 56; seconds 15; speed 12; z motion 4.5126; 3D tilt 1.40305
+Case 3: PASS; cells 96; seconds 15; speed 4; z motion 3.8516; 3D tilt 1.38318
+PASS: closed bevels, cube boundaries, initial fall, dispersion, front-to-back rotation, floor clearance and pause.
