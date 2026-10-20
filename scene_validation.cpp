@@ -25,7 +25,38 @@ static void restingStart(const CrystalScene&s){
   require(supportedFace,"Object does not stand on a horizontal face");
  }
 }
+static void wallMotion(){
+ CrystalScene s;s.density=1;s.create();s.extract(0);
+ for(float angle:{0.f,.7f,1.5707963f,3.14f,6.28f})for(float speed:{.1f,.5f,1.f,2.f,4.f,-2.f,12.f,-12.f,0.f}){
+  s.boxAngle=angle;s.updateBox(0);s.rotationSpeed=speed;
+  for(int step=0;step<3;step++){
+   s.step(1.f/120);btVector3 omega{0,0,speed*.0174532925f},center{s.boxCenter.x,s.boxCenter.y,s.boxCenter.z};
+   for(auto*wall:s.boxWalls){
+    require((wall->getAngularVelocity()-omega).length()<1e-6f,"Rotating wall angular velocity disagrees with its motion");
+    auto point=wall->getWorldTransform()*btVector3{1.2f,.2f,-.8f};auto actual=wall->getVelocityInLocalPoint(point-wall->getWorldTransform().getOrigin());
+    require((actual-omega.cross(point-center)).length()<2e-6f,"Wall contact velocity does not match rigid rotation");
+   }
+  }
+ }
+ std::cout<<"Wall velocities: PASS; slow/fast motion, reversal, stop and angle wrap.\n";
+}
+static void slowSmallPieces(){
+ for(float speed:{2.f,-2.f}){
+  CrystalScene s;s.width=s.height=s.depth=.5f;s.density=96;s.appearance.preset(2);s.rotationSpeed=speed;s.create();
+  for(int frame=0;frame<65*120;frame++){
+   s.step(1.f/120);require(s.boundsValid(.003f),"Small pieces escaped during slow rotation");
+   if(frame==50*120||frame==65*120-1){btVector3 mean{0,0,0};auto inverse=s.boxTransform().inverse();for(auto&c:s.cells)mean+=inverse*c.body->getWorldTransform().getOrigin();mean/=float(s.cells.size());
+    // At 100 degrees the next wall is only 10 degrees from horizontal, below
+    // the configured static-friction angle. At 130 degrees it exceeds it.
+    if(frame==50*120)require(mean.y()< -4&&std::abs(mean.x())>4.5f,"Small pieces were driven halfway across the next face before gravity could overcome friction");
+    else require(mean.y()>4.5f&&std::abs(mean.x())>4.5f,"Small pieces failed to slide to the next edge once the wall was steep enough");
+    std::cout<<"Small pieces at "<<s.boxAngle*57.29578f<<" degrees: center "<<mean.x()<<", "<<mean.y()<<"\n";
+   }
+  }
+ }
+}
 int main(){try{
+ wallMotion();slowSmallPieces();
  for(int shape=0;shape<4;shape++)for(int count:{1,2,8,96}){
   CrystalScene s;s.objectShape=shape;s.density=count;
   if(count==2){s.width=9.8f;s.height=9.8f;s.depth=9.8f;} // Fit a deliberately oversized object.

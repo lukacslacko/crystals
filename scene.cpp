@@ -129,6 +129,10 @@ void CrystalScene::create(uint32_t seed){
  sourceSize=V3{width,height,depth}*objectScale;objectVolume=0;for(auto&f:source)for(size_t k=1;k+1<f.vertices.size();k++)objectVolume+=dot(f.vertices[0],cross(f.vertices[k],f.vertices[k+1]))/6;
  clearPhysics();cells.clear();bonds.clear();extracted=0;simulating=true;paused=false;simulationTime=0;boxAngle=0;accumulator=0;revision++;soundGeneration++;soundLastHit.fill(-1000);soundLastSeen.fill(-1000);makeStudio();
  configuration=std::make_unique<btDefaultCollisionConfiguration>();dispatcher=std::make_unique<btCollisionDispatcher>(configuration.get());broadphase=std::make_unique<btDbvtBroadphase>();solver=std::make_unique<btSequentialImpulseConstraintSolver>();world=std::make_unique<btDiscreteDynamicsWorld>(dispatcher.get(),broadphase.get(),solver.get(),configuration.get());world->setGravity({0,-9.81f,0});world->getSolverInfo().m_numIterations=35;world->getSolverInfo().m_splitImpulse=true;
+ // Bullet's single-precision acos-based kinematic differencing can round slow
+ // substep rotations to zero. Override its estimate after saveKinematicState,
+ // before collision response, using the motor's exact rigid velocity field.
+ world->setInternalTickCallback([](btDynamicsWorld*w,btScalar){static_cast<CrystalScene*>(w->getWorldUserInfo())->setWallVelocities();},this,true);
  auto wall=[&](V3 center,V3 half){
   auto shape=std::make_unique<btBoxShape>(bt(half));btRigidBody::btRigidBodyConstructionInfo ci(0,nullptr,shape.get());ci.m_friction=.62f;ci.m_restitution=.04f;auto b=std::make_unique<btRigidBody>(ci);
   btTransform local;local.setIdentity();local.setOrigin(bt(center));auto t=boxTransform()*local;b->setWorldTransform(t);b->setInterpolationWorldTransform(t);
@@ -198,6 +202,10 @@ btTransform CrystalScene::boxTransform()const{btTransform t;t.setIdentity();t.se
 void CrystalScene::updateBox(float dt){
  boxAngle=std::fmod(boxAngle+rotationSpeed*.0174532925f*dt,6.283185307f);auto pose=boxTransform();
  for(size_t i=0;i<boxWalls.size();i++){boxWalls[i]->setWorldTransform(pose*wallLocal[i]);world->updateSingleAabb(boxWalls[i]);}
+}
+void CrystalScene::setWallVelocities(){
+ btVector3 omega{0,0,rotationSpeed*.0174532925f};
+ for(auto*wall:boxWalls){auto velocity=omega.cross(wall->getWorldTransform().getOrigin()-bt(boxCenter));wall->setLinearVelocity(velocity);wall->setAngularVelocity(omega);wall->setInterpolationLinearVelocity(velocity);wall->setInterpolationAngularVelocity(omega);}
 }
 void CrystalScene::rebuild(){
  auto coordinates=[&](Material&m,const btTransform&pose){auto inverse=pose.inverse();auto b=inverse.getBasis();auto o=inverse.getOrigin();m.localX={b[0].x(),b[0].y(),b[0].z(),o.x()};m.localY={b[1].x(),b[1].y(),b[1].z(),o.y()};m.localZ={b[2].x(),b[2].y(),b[2].z(),o.z()};};

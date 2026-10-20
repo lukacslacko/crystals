@@ -52,7 +52,7 @@ public:
  btTransform boxTransform()const;void updateBox(float dt);void updateMaterials();
  ~CrystalScene();void clearPhysics();void create(uint32_t seed=73192);void rebuild();void updateOptics();void updateBevel();bool step(float dt);bool extract(int id);int pick(V3 origin,V3 direction)const;float cohesion()const;bool boundsValid(float tolerance=.045f)const;bool geometryValid()const;bool moving()const;
 private:
- float accumulator=0;void makeStudio();void makeCell(Cell&cell);void meshCell(Cell&cell);void placeOnBottom();void constrainBounds();
+ float accumulator=0;void makeStudio();void makeCell(Cell&cell);void meshCell(Cell&cell);void placeOnBottom();void setWallVelocities();void constrainBounds();
  std::array<btVector3,SoundVoices>soundLinear,soundAngular,soundOrigin;
  std::array<float,SoundVoices*SoundVoices>soundLastHit{},soundLastSeen{};
  void prepareSound();void collectSound();

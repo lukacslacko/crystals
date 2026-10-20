@@ -23,7 +23,11 @@ Its axis passes through the cube center, horizontally front-to-back, perpendicul
 to the wall behind it. The box is elevated enough to clear the floor at every angle.
 
 The six walls are Bullet kinematic rigid bodies, driven by the same transform as
-the visible metal rails. Gravity remains vertical in world coordinates. Contacts
+the visible metal rails. Their angular velocity comes directly from the rotation
+motor; each wall center has velocity omega cross its offset from the cube center.
+These exact velocities are supplied before contact solving, avoiding loss of
+slow angular motion in Bullet's single-precision transform differencing.
+Gravity remains vertical in world coordinates. Contacts
 with the rotating walls lift, slide and tumble the crystals. The containment
 check operates in the rotating cube's local coordinates; a small conservative
 projection corrects residual numerical drift. It does not rotate the crystals
@@ -230,6 +234,11 @@ They also cover all color palettes, shuffling, color/ambient persistence, shared
 source coordinates across moved fragments, and camera panning within world XY.
 Placement tests cover bottom contact, support-face orientation, intact assembly,
 zero initial velocity, and single-piece support before frame rotation begins.
+Wall-motion tests cover slow/fast speeds, reversal, stopping and angle wrapping.
+A 0.5-unit object split into 96 stony pieces runs at +/-2 degrees per second:
+it remains near the supporting edge below the friction angle, then slides to
+the next edge once gravity overcomes friction. This guards against spurious
+halfway sliding caused by incorrect wall contact velocities.
 Native GPU captures were inspected for every preset, paper/stone/metal walls,
 partial transparency, mirror reflectance, and the stochastic rendering mode.
 A live mixed-wall run passed containment checks for 360 frames at 1440 x 900

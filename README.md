@@ -86,6 +86,8 @@ The tests check Voronoi geometry, rotating-container physics, containment, modal
 
 Placement checks verify bottom-wall contact, horizontal support faces, intact initial assembly, zero initial velocity, and stable single-piece support before rotation begins.
 
+Wall-motion tests verify contact velocities at slow and fast rotation speeds, during reversal and stopping, and across angle wrapping. A 96-piece, 0.5-unit object runs through both rotation directions to check that pieces stay near the supporting edge below the friction angle and slide to the next edge once the slope is steep enough.
+
 To check the actual audio output device as well:
 
 ```powershell
