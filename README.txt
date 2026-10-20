@@ -81,6 +81,8 @@ excitation; the remaining short glass ticks fade away in roughly 20 ms.
 
 Open Audio settings below the main volume slider. All changes apply live:
   Master volume: 0-100%, default 75%.
+  Stereo width: 0-200%, default 100%. Zero is mono; 100% spans the cube;
+    200% widens the spread. Left/right placement follows camera orbit and pan.
   Decay time: 5-500 ms, default 20 ms. Approximate time to fade by 40 dB;
     individual shapes and higher modes vary slightly. Longer values ring more.
   Impacts / Scraping / Wall sounds: independent levels from 0-300%.
@@ -116,8 +118,13 @@ New micro-impacts stop as soon as sliding/contact stops. Contact pressure adds
 damping. Nothing is driven by a melody or an always-playing ambient loop.
 The first scrape grain also receives a random offset when sliding begins.
 
-Stereo placement, gentle high-frequency rolloff and smooth volume changes shape
-the mix. A stereo-linked peak limiter with 2 ms lookahead, about 40 ms gain recovery
+Equal-power stereo panning positions impacts, scraping and wall sounds using
+their contact positions relative to the camera. A short tap starts at its actual
+position immediately, and its decay retains that position between contacts.
+Moving contacts pan smoothly; multiple contacts on a wall use an excitation-
+weighted position. Panning keeps total signal power constant. Gentle high-frequency
+rolloff and smooth volume changes shape the mix. A stereo-linked peak limiter
+with 2 ms lookahead, about 40 ms gain recovery
 and a -1.41 dBFS ceiling replaces the previous saturating waveshaper. This controls
 dense pile-ups without flattening each waveform peak into harmonic distortion.
 This is a simple
@@ -128,7 +135,10 @@ Sound generation requires no external audio assets or additional runtime downloa
 
 The audio validation passed resting-contact silence, shape-dependent tuning,
 20 ms impact decay on every crystal and pane, speed-dependent scrape density,
-scrape stopping, mute fade, finite output and dense-impact peak limiting. The
+scrape stopping, mute fade, finite output and dense-impact peak limiting. Stereo
+tests cover left/right separation for strikes, scrapes and walls, equal-power
+panning, centered/mono balance, decay placement, camera orbit/pan and width
+persistence. The
 slowest measured release was -43.88 dB in the 20-25 ms window relative to the
 first 4 ms. The release test disables onset spread, accounts for limiter latency
 and uses a settled low master level to measure the resonance without limiting.

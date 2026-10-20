@@ -49,6 +49,8 @@ public:
  int density=56,extracted=0,objectShape=0;float strength=.55f,ior=1.54f,bevel=.075f,width=8,height=5,depth=2.8f,objectVolume=0,objectScale=1;bool simulating=false,paused=false;float simulationTime=0;uint32_t revision=0;
  float boxHalf=5.2f,boxAngle=0,rotationSpeed=4;V3 boxCenter{0,7.5f,0};std::vector<btRigidBody*>boxWalls;std::vector<btTransform>wallLocal;
  uint32_t soundGeneration=0;std::function<void(const SoundFrame&)>soundSink;
+ Camera soundCamera;
+ float soundPan(V3 position)const{return std::clamp(dot(position-soundCamera.target,soundCamera.right())/boxHalf,-1.f,1.f);}
  btTransform boxTransform()const;void updateBox(float dt);void updateMaterials();
  ~CrystalScene();void clearPhysics();void create(uint32_t seed=73192);void rebuild();void updateOptics();void updateBevel();bool step(float dt);bool extract(int id);int pick(V3 origin,V3 direction)const;float cohesion()const;bool boundsValid(float tolerance=.045f)const;bool geometryValid()const;bool moving()const;
 private:

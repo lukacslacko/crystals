@@ -5,7 +5,7 @@
 
 struct AudioSettings {
  bool enabled=true;
- float volume=.75f,decayMs=20,impacts=1,scraping=1,walls=1,pitch=0,texture=1,onsetSpreadMs=8;
+ float volume=.75f,decayMs=20,impacts=1,scraping=1,walls=1,pitch=0,texture=1,onsetSpreadMs=8,stereoWidth=1;
  bool operator==(const AudioSettings&)const=default;
 };
 AudioSettings sanitizeAudioSettings(AudioSettings settings);
@@ -49,6 +49,6 @@ private:
  std::array<PeakPoint,SoundLookahead+2>peakQueue{};
  std::array<std::array<float,2>,SoundLookahead>lookahead{};
  uint64_t audioSample=0;int peakHead=0,peakCount=0,delayCursor=0;float limiterGain=1;
- uint32_t generation=0,random=0x41b27c19;float volumeNow=0,wallNow=1,lowL=0,lowR=0,dcL=0,dcR=0;
+ uint32_t generation=0,random=0x41b27c19;float volumeNow=0,wallNow=1,widthNow=1,lowL=0,lowR=0,dcL=0,dcR=0;
  float noise();
 };

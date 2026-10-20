@@ -11,7 +11,7 @@ AudioSettings sanitizeAudioSettings(AudioSettings s){
  auto limit=[](float v,float lo,float hi,float fallback){return std::isfinite(v)?std::clamp(v,lo,hi):fallback;};
  s.volume=limit(s.volume,0,1,.75f);s.decayMs=limit(s.decayMs,5,500,20);
  s.impacts=limit(s.impacts,0,3,1);s.scraping=limit(s.scraping,0,3,1);s.walls=limit(s.walls,0,3,1);
- s.pitch=limit(s.pitch,-12,12,0);s.texture=limit(s.texture,.25f,3,1);s.onsetSpreadMs=limit(s.onsetSpreadMs,0,8,8);return s;
+ s.pitch=limit(s.pitch,-12,12,0);s.texture=limit(s.texture,.25f,3,1);s.onsetSpreadMs=limit(s.onsetSpreadMs,0,8,8);s.stereoWidth=limit(s.stereoWidth,0,2,1);return s;
 }
 AudioSettings loadAudioSettings(const std::filesystem::path&path){
  AudioSettings s;std::ifstream in(path);std::string line;
@@ -20,12 +20,13 @@ AudioSettings loadAudioSettings(const std::filesystem::path&path){
   else if(key=="impacts")s.impacts=value;else if(key=="scraping")s.scraping=value;else if(key=="walls")s.walls=value;
   else if(key=="pitch")s.pitch=value;else if(key=="texture")s.texture=value;
   else if(key=="onset_spread_ms")s.onsetSpreadMs=value;
+  else if(key=="stereo_width")s.stereoWidth=value;
  }return sanitizeAudioSettings(s);
 }
 bool saveAudioSettings(const std::filesystem::path&path,const AudioSettings&input){
  auto s=sanitizeAudioSettings(input);std::ofstream out(path);if(!out)return false;out<<std::setprecision(9)
   <<"enabled "<<s.enabled<<"\nvolume "<<s.volume<<"\ndecay_ms "<<s.decayMs<<"\nimpacts "<<s.impacts
-  <<"\nscraping "<<s.scraping<<"\nwalls "<<s.walls<<"\npitch "<<s.pitch<<"\ntexture "<<s.texture<<"\nonset_spread_ms "<<s.onsetSpreadMs<<"\n";return bool(out);
+  <<"\nscraping "<<s.scraping<<"\nwalls "<<s.walls<<"\npitch "<<s.pitch<<"\ntexture "<<s.texture<<"\nonset_spread_ms "<<s.onsetSpreadMs<<"\nstereo_width "<<s.stereoWidth<<"\n";return bool(out);
 }
 SoundDescription describeSound(const CrystalScene&s){
  SoundDescription d;d.generation=s.soundGeneration;
@@ -38,7 +39,7 @@ SoundDescription describeSound(const CrystalScene&s){
   // Small modal approximations retain shape tuning while changing material response.
   int finish=s.appearance.finish;const float pitch[]={1,.24f,.58f,.85f},release[]={1,.38f,.65f,.24f},level[]={1,.65f,.8f,.5f};
   for(int k=0;k<SoundModes;k++){v.frequency[k]*=pitch[finish];v.decay[k]*=release[finish];v.gain[k]*=level[finish]/(1+(finish==1?.45f:finish==3?.12f:0)*k);}
-  v.pan=std::clamp(c.body->getWorldTransform().getOrigin().x()/9.f,-.7f,.7f);
+  auto p=c.body->getWorldTransform().getOrigin();v.pan=s.soundPan({p.x(),p.y(),p.z()});
  }
  for(int p=0;p<6;p++){auto&v=d.voices[96+p];v.enabled=true;v.pane=true;float ratios[]={1,1.62f,2.36f,3.23f,4.31f,5.71f};float base=1050.f*(10.4f/(2*s.boxHalf))*(1+.018f*p);
   for(int k=0;k<SoundModes;k++){v.frequency[k]=base*ratios[k];v.decay[k]=.0038f/(1+.18f*k);v.gain[k]=.30f/std::pow(1.f+k,.95f);}
@@ -49,8 +50,8 @@ SoundDescription describeSound(const CrystalScene&s){
 float GlassSynth::noise(){random^=random<<13;random^=random>>17;random^=random<<5;return float(random>>8)*(2.f/16777216.f)-1;}
 void GlassSynth::configure(const SoundDescription&d){
  description=d;
- if(generation!=d.generation){voices={};generation=d.generation;lowL=lowR=dcL=dcR=0;lookahead={};peakHead=peakCount=delayCursor=0;audioSample=0;limiterGain=1;}
- for(int i=0;i<SoundVoices;i++){auto&v=voices[i];auto&s=d.voices[i];v.enabled=s.enabled;v.pane=s.pane;v.targetPan=s.pan;
+ bool fresh=generation!=d.generation;if(fresh){voices={};generation=d.generation;lowL=lowR=dcL=dcR=0;lookahead={};peakHead=peakCount=delayCursor=0;audioSample=0;limiterGain=1;}
+ for(int i=0;i<SoundVoices;i++){auto&v=voices[i];auto&s=d.voices[i];if(fresh||!v.enabled)v.pan=v.targetPan=s.pan;v.enabled=s.enabled;v.pane=s.pane;
   if(!v.enabled){v={};continue;}
   for(int k=0;k<SoundModes;k++){float frequency=std::clamp(s.frequency[k]*std::exp2(settings.pitch/12),40.f,16000.f),decay=std::max(.0001f,s.decay[k]*settings.decayMs/20);float r=std::exp(-1/(SoundRate*decay)),angle=2*Pi*frequency/SoundRate;v.m[k].rc=r*std::cos(angle);v.m[k].rs=r*std::sin(angle);v.m[k].gain=s.gain[k];}
  }
@@ -58,8 +59,14 @@ void GlassSynth::configure(const SoundDescription&d){
 void GlassSynth::setSettings(const AudioSettings&input){auto next=sanitizeAudioSettings(input);bool retune=next.decayMs!=settings.decayMs||next.pitch!=settings.pitch;settings=next;if(retune)configure(description);}
 void GlassSynth::excite(const SoundFrame&frame){
  if(frame.generation!=generation){for(auto&v:voices){v.targetScrape=0;v.slipSpeed=0;v.pressure=0;}return;}
- for(int i=0;i<SoundVoices;i++){auto&v=voices[i];const auto&d=frame.voices[i];if(!v.enabled)continue;v.targetPan=std::clamp(d.pan,-.75f,.75f);v.pressure=std::clamp(d.pressure,0.f,1.f);
+ for(int i=0;i<SoundVoices;i++){auto&v=voices[i];const auto&d=frame.voices[i];if(!v.enabled)continue;v.pressure=std::clamp(d.pressure,0.f,1.f);
   float hit=std::clamp(d.impact,0.f,1.5f);
+  if(hit>0||(d.scrape>0&&d.slipSpeed>.035f)){
+   v.targetPan=std::clamp(d.pan,-1.f,1.f);float energy=0;for(auto&m:v.m)energy+=m.re*m.re+m.im*m.im;
+   // An idle voice must start at its contact position: a 20 ms tap is mostly
+   // gone before the old 26 ms pan smoother could move it away from center.
+   if(energy<1e-12f)v.pan=v.targetPan;
+  } // Empty physics packets leave the audible tail at its last contact position.
   // Independent sub-tick offsets break the common 120 Hz onset grid. The 8 ms
   // maximum is shorter than one physics tick, so pending hits cannot overlap it.
   if(hit>0){if(v.impact==0)v.impactWait=int((.5f+.5f*noise())*settings.onsetSpreadMs*(SoundRate/1000.f));v.impact=std::min(2.f,v.impact+hit);if(hit>.001f)impacts++;}
@@ -78,9 +85,10 @@ void GlassSynth::excite(const SoundFrame&frame){
 void GlassSynth::render(float*stereo,int frames){
  for(int n=0;n<frames;n++){
   float left=0,right=0;
+  widthNow+=(settings.stereoWidth-widthNow)*.001f;if(std::abs(widthNow-settings.stereoWidth)<1e-5f)widthNow=settings.stereoWidth;
   for(auto&v:voices){
    if(!v.enabled)continue;
-   v.scrape+=(v.targetScrape-v.scrape)*.012f;v.pan+=(v.targetPan-v.pan)*.0008f;
+   v.scrape+=(v.targetScrape-v.scrape)*.012f;v.pan+=(v.targetPan-v.pan)*.01f;
    // A strike starts each mode at its zero crossing. The default 20 ms release
    // loses roughly 40-50 dB; the decay control scales all modal time constants.
    // Compress contact strength gently so tiny taps remain audible at ambient
@@ -99,7 +107,8 @@ void GlassSynth::render(float*stereo,int frames){
    float sum=0;float load=1-v.pressure*.00015f;
    for(int k=0;k<SoundModes;k++){auto&m=v.m[k];m.im+=(hit+grain*(.7f+.15f*k))*m.drive;float re=(m.re*m.rc-m.im*m.rs)*load;float im=(m.re*m.rs+m.im*m.rc)*load;m.re=std::abs(re)<1e-18f?0:re;m.im=std::abs(im)<1e-18f?0:im;sum+=m.re*m.gain;}
    if(v.pane)sum*=wallNow;
-   float pan=std::clamp(v.pan,-.75f,.75f);left+=sum*(.7071f-.36f*pan);right+=sum*(.7071f+.36f*pan);
+   // Equal-power panning gives distinct sides without changing total energy.
+   float pan=std::clamp(v.pan*widthNow,-1.f,1.f);left+=sum*std::sqrt(.5f*(1-pan));right+=sum*std::sqrt(.5f*(1+pan));
   }
   // Gentle high-frequency rolloff, DC removal, smoothed gain, then 5x the
   // previous output gain. A linked lookahead limiter preserves wave shapes

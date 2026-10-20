@@ -16,7 +16,7 @@ A native Windows crystal tumbler built with C++20, DirectX 12 hardware ray traci
 - Spatial antialiasing enabled by default, borderless fullscreen, and an optional black environment without the floor or backdrop.
 - Six approximate resonant modes per crystal and per glass wall. Collisions drive short taps; sliding drives irregular micro-impacts.
 - Material presets also adjust contact friction, restitution, and modal sound. All shapes remain rigid, including paper and rubber finishes.
-- Live audio controls for volume, decay, impact/scrape/wall levels, pitch, scrape density, and onset spread. Preferences persist between launches.
+- Stereo impacts and scraping follow the camera's left/right view, with equal-power panning and adjustable width. Live audio controls for volume, decay, impact/scrape/wall levels, pitch, scrape density, and onset spread. Preferences persist between launches.
 
 ## Requirements
 
@@ -57,6 +57,8 @@ Keep all nine `.cso` shader files beside `CrystalSlab.exe`. The build copies the
 | **F9** | Save a clean PNG beside the executable |
 
 The panel controls cell count (1–96), index of refraction, bevel width, cube rotation, optics, and GPU rendering budget. **Audio settings** opens the sound panel. The default decay is approximately 20 ms, and impacts are independently staggered within an 8 ms window to avoid synchronized starts. Audio preferences are stored in `AudioSettings.ini` beside the executable.
+
+**Stereo width** ranges from 0% (mono) through 100% (full spread across the cube, the default) to 200% (wider). Impacts, scraping, and wall sounds are positioned relative to the camera; orbiting and panning change their left/right placement. Short taps start at their contact position and keep that position through their decay. Panning preserves total signal power, and the limiter links both channels to preserve the stereo image.
 
 **Materials…** opens the material panel. Choose a surface preset, then independently edit transparency, shine, reflectance, and structure. Transparency 0 gives an opaque tinted solid; 1 gives clear tinted transmission. Lower shine broadens highlights and roughens transmission. Reflectance sets the normal-incidence reflection strength independently of the refraction index. The structure slider controls procedural bump and pigment variation attached to each moving piece.
 

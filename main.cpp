@@ -42,6 +42,8 @@ static void audioPanel(Renderer&r,AudioSettings&settings,bool&open,bool saveFail
  ImGui::SetNextWindowSize({340,0});ImGui::SetNextWindowSizeConstraints({340,0},{340,std::max(250.f,float(r.height)-75)});
  if(ImGui::Begin("Audio settings",&open,ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoResize)){
   ImGui::Checkbox("Sound enabled",&settings.enabled);audioLevel("##Master",settings.volume,"Master volume %.0f%%");
+  ImGui::TextDisabled("STEREO WIDTH");audioLevel("##StereoWidth",settings.stereoWidth,"%.0f%%",200);
+  if(ImGui::IsItemHovered())ImGui::SetTooltip("0: mono. 100: full spread across the cube. 200: wider.\nCollisions and scraping follow the camera's left/right view.");
   ImGui::TextDisabled("DECAY TIME");ImGui::SetNextItemWidth(-1);ImGui::SliderFloat("##Decay",&settings.decayMs,5,500,"%.0f ms",ImGuiSliderFlags_Logarithmic);
   if(ImGui::IsItemHovered())ImGui::SetTooltip("Approximate time for a glass tap to fall by 40 dB.\n20 ms is dry and crisp; longer values ring more.");
   ImGui::TextDisabled("IMPACTS");audioLevel("##Impacts",settings.impacts,"%.0f%%",300);
@@ -187,7 +189,7 @@ else if(a==L"--black-background")captureMaterials.blackBackground=true;else if(a
   log<<"Adapter: "<<renderer.adapterName<<"\nBackend: DirectX 12 inline ray queries / DXR 1.1\nTriangles: "<<scene.triangles.size()<<"\nSpotlights: "<<scene.lights.size()<<"; photon paths: "<<renderer.photons<<"\n";log.flush();
   if(selftest){scene.paused=false;for(int i=0;i<14400;i++){scene.step(1.f/120);if(!scene.boundsValid(.003f))throw std::runtime_error("Rotating cube containment failed");}scene.paused=true;renderer.setScene(scene);log<<"Rotating containment test: PASS, 120 seconds\n";}
   auto audioSettingsPath=std::filesystem::path(directory)/L"AudioSettings.ini";AudioSettings audioSettings=loadAudioSettings(audioSettingsPath);bool showAudio=false,audioDirty=false,audioSaveFailed=false;auto audioChanged=std::chrono::steady_clock::now();bool showColors=false,showObject=false,showMaterials=false,materialDirty=false,materialSaveFailed=false;auto materialChanged=audioChanged;
-  GlassAudio sound;uint32_t soundRevision=scene.revision;if(interactive){sound.setSettings(audioSettings);sound.start();sound.configure(describeSound(scene));scene.soundSink=[&](const SoundFrame&frame){sound.submit(frame);};log<<"Audio: "<<sound.status()<<"; volume "<<audioSettings.volume*100<<"%; decay "<<audioSettings.decayMs<<" ms\n";log.flush();}
+  scene.soundCamera=camera;GlassAudio sound;uint32_t soundRevision=scene.revision;if(interactive){sound.setSettings(audioSettings);sound.start();sound.configure(describeSound(scene));scene.soundSink=[&](const SoundFrame&frame){sound.submit(frame);};log<<"Audio: "<<sound.status()<<"; volume "<<audioSettings.volume*100<<"%; decay "<<audioSettings.decayMs<<" ms\n";log.flush();}
   auto start=std::chrono::steady_clock::now(),previous=start;MSG message{};bool running=true,showUI=true;float fps=0;int hovered=-1;uint32_t seed=73192,testFrame=0;double gpuSum=0;
   while(running){
    while(PeekMessage(&message,nullptr,0,0,PM_REMOVE)){if(message.message==WM_QUIT)running=false;TranslateMessage(&message);DispatchMessage(&message);}if(!running)break;
@@ -213,6 +215,7 @@ else if(a==L"--black-background")captureMaterials.blackBackground=true;else if(a
     ImGui::Render();
    }
    if(reform){scene.create(++seed);renderer.setScene(scene);}
+   scene.soundCamera=camera;
    if(interactive&&scene.revision!=soundRevision){sound.configure(describeSound(scene));soundRevision=scene.revision;}
    if(scene.step(dynamicTest?1.f/60:dt)){if(dynamicTest&&!scene.boundsValid(.003f))throw std::runtime_error("Live rotating containment failed");renderer.setScene(scene);}
    if(motionTest){camera.yaw=.10f+.32f*float(std::min(testFrame,59u))/59;camera.pitch=.11f;renderer.reset();}

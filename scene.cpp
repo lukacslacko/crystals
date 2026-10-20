@@ -231,7 +231,7 @@ void CrystalScene::prepareSound(){
  }
 }
 void CrystalScene::collectSound(){
- SoundFrame frame;frame.generation=soundGeneration;
+ SoundFrame frame;frame.generation=soundGeneration;std::array<float,SoundVoices>panWeights{};
  for(int m=0;m<dispatcher->getNumManifolds();m++){
   auto*manifold=dispatcher->getManifoldByIndexInternal(m);auto*a=btRigidBody::upcast(manifold->getBody0());auto*b=btRigidBody::upcast(manifold->getBody1());if(!a||!b)continue;
   int ia=a->getUserIndex(),ib=b->getUserIndex();if(ia<0||ib<0||ia>=SoundVoices||ib>=SoundVoices)continue;
@@ -246,7 +246,8 @@ void CrystalScene::collectSound(){
   // Resting support forces alone remain silent; actual slip is required.
   float rubbing=slide>.035f?std::min(.22f,std::sqrt(impulse)*std::min(slide,2.f)*.065f):0;
   auto drive=[&](int id,const btRigidBody*body,btVector3 position){auto&v=frame.voices[id];v.impact=std::min(1.5f,v.impact+hit*(id>=96?.48f:1.f));v.scrape=std::min(.6f,v.scrape+rubbing*(id>=96?.55f:1.f));v.slipSpeed=std::max(v.slipSpeed,slide);v.pressure=std::min(1.f,v.pressure+impulse*.025f);
-   auto local=body->getWorldTransform().inverse()*position;float scale=id>=96?boxHalf:std::cbrt(std::max(.05f,cells[id].volume));v.x=std::clamp(local.x()/scale,-1.f,1.f);v.y=std::clamp(local.y()/scale,-1.f,1.f);v.z=std::clamp(local.z()/scale,-1.f,1.f);v.pan=std::clamp(position.x()/9.f,-.7f,.7f);
+   auto local=body->getWorldTransform().inverse()*position;float scale=id>=96?boxHalf:std::cbrt(std::max(.05f,cells[id].volume));v.x=std::clamp(local.x()/scale,-1.f,1.f);v.y=std::clamp(local.y()/scale,-1.f,1.f);v.z=std::clamp(local.z()/scale,-1.f,1.f);
+   float weight=hit+rubbing;if(weight>0){v.pan=(v.pan*panWeights[id]+soundPan(v3(position))*weight)/(panWeights[id]+weight);panWeights[id]+=weight;}
   };drive(ia,a,pointA);drive(ib,b,pointB);
  }soundSink(frame);
 }
