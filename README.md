@@ -49,7 +49,7 @@ Keep all nine `.cso` shader files beside `CrystalSlab.exe`. The build copies the
 | Middle drag | Pan in the world XY plane, perpendicular to the cube's rotation axis |
 | **Home** | Center the camera on the cube, preserving orbit and zoom |
 | Left click a crystal | Remove it |
-| **R** / Drop again | Release a fresh arrangement |
+| **R** / Reset object | Reassemble the object resting on the cube's bottom wall and reset cube rotation |
 | **Space** | Pause/resume physics and cube rotation |
 | **M** | Mute/unmute |
 | **Tab** | Show/hide controls |
@@ -64,7 +64,7 @@ Set all four side walls together or expand **Set walls individually**. The names
 
 Enable **Thin glass on invisible walls** to show the invisible sides and both end walls as clear, 0.035-unit glass panes. They reflect and refract light at IOR 1.5. The checkbox preserves paper/stone/metal finishes, collision boundaries, and sounds; crystals remain clickable through the glass. It is off by default and saved with the material settings.
 
-**Original object…** selects a box, faceted ellipsoid (equal dimensions give a sphere), cylinder with its axis along Y, or octahedron. Width, height, and depth apply on slider release and rebuild the pieces. Oversized dimensions scale together to fit inside a 5.05-unit radius, leaving room for even a single piece to tumble. **Restore original slab** returns to the 8 × 5 × 2.8 box. Object controls, like cell count, are session settings.
+**Original object…** selects a box, faceted ellipsoid (equal dimensions give a sphere), cylinder with its axis along Y, or octahedron. Width, height, and depth apply on slider release and rebuild the pieces. The assembled object starts at rest on the cube's bottom wall: the box and cylinder stand on their base, the octahedron is rotated onto a triangular face, and the ellipsoid rests at its lowest point. Placement uses the beveled collision hulls; pieces receive no initial kick. Gravity and frame rotation then drive the motion. Oversized dimensions scale together to fit inside a 5.05-unit radius, leaving room for even a single piece to tumble. **Restore original slab** returns to the 8 × 5 × 2.8 box. Object controls, like cell count, are session settings.
 
 **Colors & lighting…** offers Pastel glass, Jewel tones, Ocean, Aurora, Ember, Earth, and Spectrum palettes. Use random solid colors per piece, or choose a directional gradient, radial gradient, three-axis color blend, or flowing bands. Gradients color the original solid throughout its volume, including cut faces and internal absorption; each fragment carries its own part as it moves. Adjust color intensity, gradient scale and offset, and the directional gradient's azimuth/elevation. **Shuffle piece colors** changes random assignments without restarting physics.
 
@@ -83,6 +83,8 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 The tests check Voronoi geometry, rotating-container physics, containment, modal decay, onset spreading, scrape behavior, audio controls, saved settings, peak limiting, material ranges, independently visible walls, and texture coordinates during rotation. Geometry tests cover all four source shapes at 1, 2, 8, and 96 cells, including oversized objects, slender shapes, the smallest dimensions, wide bevels, and removal of the last cell. Material tests check glass clearance, studio geometry, palettes and shuffling, color/lighting persistence, continuous source coordinates across moving fragments, and camera pan direction/plane invariants. They do not need a GPU or an audio output device. The audio test writes a procedural recording to `build/GlassAmbient.wav`.
+
+Placement checks verify bottom-wall contact, horizontal support faces, intact initial assembly, zero initial velocity, and stable single-piece support before rotation begins.
 
 To check the actual audio output device as well:
 

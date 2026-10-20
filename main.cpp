@@ -97,7 +97,7 @@ static void objectPanel(Renderer&r,CrystalScene&s,bool&open,bool&reform){
   const char*names[]={"Width (X)","Height (Y)","Depth (Z)"};float*dimensions[]={&s.width,&s.height,&s.depth};
   for(int i=0;i<3;i++){ImGui::TextDisabled("%s",names[i]);ImGui::SetNextItemWidth(-1);ImGui::PushID(i);ImGui::SliderFloat("##Dimension",dimensions[i],.5f,9.8f,"%.2f units",ImGuiSliderFlags_AlwaysClamp);if(ImGui::IsItemDeactivatedAfterEdit())reform=true;ImGui::PopID();}
   ImGui::TextDisabled("Fitted size: %.2f x %.2f x %.2f",s.width*s.objectScale,s.height*s.objectScale,s.depth*s.objectScale);
-  ImGui::TextWrapped("Changes rebuild and drop the pieces on release. Oversized shapes scale down together to leave room to tumble inside the cube.");
+  ImGui::TextWrapped("Changes rebuild the object resting on the bottom wall. The octahedron starts on a face. Oversized shapes scale down together to leave room to tumble.");
   ImGui::TextWrapped("Equal ellipsoid dimensions make a faceted sphere. The cylinder's axis runs along Y.");
   if(ImGui::Button("Restore original slab",{-1,32})){s.objectShape=0;s.width=8;s.height=5;s.depth=2.8f;reform=true;}
  }ImGui::End();
@@ -132,7 +132,7 @@ static void hud(Renderer&r,CrystalScene&s,GlassAudio&audio,AudioSettings&setting
  ImGui::Begin("Crystal controls",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_AlwaysAutoResize);
  ImGui::TextDisabled("MATERIAL STUDY   /   07");ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);ImGui::TextUnformatted("Crystal Tumbler");ImGui::PopFont();ImGui::TextDisabled("ROTATING CUBE / MATERIALS");ImGui::Spacing();ImGui::Separator();ImGui::Spacing();
  ImGui::TextWrapped("%s",r.adapterName.c_str());ImGui::TextDisabled("%.1f GPU ms   |   %.1f fps",r.gpuMs,fps);ImGui::TextDisabled("%d spp/frame   |   %d total",r.spp,r.samples);ImGui::TextDisabled(r.samples>=r.maxSamples?"Converged / GPU resting":r.moving?(r.stableOptics?"Motion / deterministic crystal optics":"Motion / temporal reconstruction"):(r.stableOptics?"Refining / crystal antialiasing":"Refining / progressive path tracing"));ImGui::Spacing();
- if(ImGui::Button("Drop again",{118,36}))reform=true;ImGui::SameLine();if(ImGui::Button(s.paused?"Resume":"Pause",{118,36}))s.paused=!s.paused;
+ if(ImGui::Button("Reset object",{118,36}))reform=true;ImGui::SameLine();if(ImGui::Button(s.paused?"Resume":"Pause",{118,36}))s.paused=!s.paused;
  ImGui::Checkbox("Contact sound",&settings.enabled);audioLevel("##AmbientVolume",settings.volume,"Volume %.0f%%");if(ImGui::Button("Audio settings...",{-1,30})){showAudio=!showAudio;if(showAudio){showMaterials=false;showObject=false;showColors=false;}}if(!audio.available())ImGui::TextDisabled("%s",audio.status().c_str());
  if(ImGui::Button("Materials...",{-1,34})){showMaterials=!showMaterials;if(showMaterials){showAudio=false;showColors=false;showObject=false;}}
  if(ImGui::Button("Colors & lighting...",{-1,34})){showColors=!showColors;if(showColors){showAudio=false;showMaterials=false;showObject=false;}}
@@ -161,7 +161,7 @@ static void hud(Renderer&r,CrystalScene&s,GlassAudio&audio,AudioSettings&setting
  ImGui::Spacing();ImGui::Text("%d / %d cells remain",int(s.cells.size())-s.extracted,int(s.cells.size()));
  ImGui::TextDisabled("%d extracted   /   %.1f degrees",s.extracted,s.boxAngle*57.29578f);if(hovered>=0)ImGui::Text("Cell %02d  -  click to extract",hovered+1);else ImGui::TextDisabled("Choose a crystal to extract");
  ImGui::End();
- ImGui::SetNextWindowPos({float(r.width)*.5f,float(r.height)-22},ImGuiCond_Always,{.5f,1});ImGui::SetNextWindowBgAlpha(.68f);ImGui::Begin("Navigation",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoInputs);ImGui::TextDisabled("RIGHT DRAG  orbit     MIDDLE DRAG  pan XY     WHEEL  zoom     HOME  center");ImGui::TextDisabled("R  drop     SPACE  pause     M  mute     F9  photo     F11  fullscreen     TAB  controls");ImGui::End();
+ ImGui::SetNextWindowPos({float(r.width)*.5f,float(r.height)-22},ImGuiCond_Always,{.5f,1});ImGui::SetNextWindowBgAlpha(.68f);ImGui::Begin("Navigation",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoInputs);ImGui::TextDisabled("RIGHT DRAG  orbit     MIDDLE DRAG  pan XY     WHEEL  zoom     HOME  center");ImGui::TextDisabled("R  reset     SPACE  pause     M  mute     F9  photo     F11  fullscreen     TAB  controls");ImGui::End();
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
  wchar_t exe[MAX_PATH];GetModuleFileName(nullptr,exe,MAX_PATH);std::wstring directory=std::filesystem::path(exe).parent_path().wstring()+L"\\";

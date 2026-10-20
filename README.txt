@@ -12,9 +12,12 @@ they are invisible. The four side walls can also be paper, stone or metal.
 The two end walls use the invisible finish. A checkbox can show all invisible
 walls as thin glass. The studio wall and floor stay stationary.
 
-The original 3D Voronoi crystal arrangement is released into this larger volume
-as independent rigid bodies. Gravity makes the crystals fall, collide and scatter.
-A small outward release velocity helps separate the pieces. The cube begins
+The original 3D Voronoi crystal arrangement starts assembled and at rest on the
+bottom wall. Box and cylinder shapes stand on their base; the octahedron rotates
+onto a triangular face, including when its dimensions differ. The ellipsoid
+rests at its lowest point. Placement uses the actual beveled collision hulls
+and their margins. The independent pieces have no initial release impulse.
+Gravity and rotation make them slide, tumble, collide and scatter. The cube begins
 turning immediately at four degrees per second (one revolution in 90 seconds).
 Its axis passes through the cube center, horizontally front-to-back, perpendicular
 to the wall behind it. The box is elevated enough to clear the floor at every angle.
@@ -143,7 +146,7 @@ build\Release\AudioValidation.exe C:\path\GlassAmbient.wav --device-test
 
 CONTROLS
 
-Drop again / R: rebuild and release a fresh set of crystals; reset the cube angle.
+Reset object / R: reassemble the object at rest on the bottom wall; reset the cube angle.
 Pause / Space: freeze both crystals and cube; sound tails fade. Resume continues both.
 Cube rotation: -12 to +12 degrees per second. Zero stops the motor while gravity
 and free-body physics continue. Negative values reverse its direction.
@@ -158,7 +161,7 @@ Original object: box, faceted ellipsoid, cylinder (Y axis), or octahedron.
   Oversized dimensions scale together to fit a 5.05-unit radius, leaving room
   to tumble even with a single cell. The panel also shows the fitted dimensions.
   Equal ellipsoid dimensions give a faceted sphere. Restore original slab
-  returns to the 8 x 5 x 2.8 box. These controls rebuild and drop the crystals.
+  returns to the 8 x 5 x 2.8 box. These controls rebuild the object on the bottom wall.
   Object dimensions, shape and cell count are session settings.
 Float in blackness: remove the floor and backdrop, with a black camera background.
   Ambient illumination remains available through Colors & lighting; disable it
@@ -225,6 +228,8 @@ wall visibility, picking occlusion, rigid-body pose preservation, friction/audio
 changes, and object-local texture coordinates after ten seconds of rotation.
 They also cover all color palettes, shuffling, color/ambient persistence, shared
 source coordinates across moved fragments, and camera panning within world XY.
+Placement tests cover bottom contact, support-face orientation, intact assembly,
+zero initial velocity, and single-piece support before frame rotation begins.
 Native GPU captures were inspected for every preset, paper/stone/metal walls,
 partial transparency, mirror reflectance, and the stochastic rendering mode.
 A live mixed-wall run passed containment checks for 360 frames at 1440 x 900

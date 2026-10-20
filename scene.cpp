@@ -102,8 +102,19 @@ void CrystalScene::meshCell(Cell&cell){
 void CrystalScene::makeCell(Cell&cell){
  meshCell(cell);auto shape=std::make_unique<btConvexHullShape>();for(auto p:cell.hull)shape->addPoint(bt(p),false);shape->recalcLocalAabb();shape->setMargin(.0008f);
  float mass=cell.volume*2.5f;btVector3 inertia;shape->calculateLocalInertia(mass,inertia);btRigidBody::btRigidBodyConstructionInfo ci(mass,nullptr,shape.get(),inertia);ci.m_friction=.62f;ci.m_restitution=.025f;ci.m_linearDamping=.15f;ci.m_angularDamping=.22f;
- float actualHeight=height*objectScale,lift=std::min(1.5f,boxHalf-actualHeight*.5f-.10f);
- auto body=std::make_unique<btRigidBody>(ci);btTransform tr;tr.setIdentity();tr.setOrigin(bt(cell.center+V3{0,boxCenter.y-actualHeight*.5f+lift,0}));body->setWorldTransform(tr);body->setSleepingThresholds(.035f,.035f);body->setCcdMotionThreshold(.15f);body->setCcdSweptSphereRadius(.03f);body->setLinearVelocity({cell.center.x*.10f,0,cell.center.z*.24f});body->setUserIndex(cell.id);cell.body=body.get();world->addRigidBody(body.get());shapes.push_back(std::move(shape));bodies.push_back(std::move(body));
+ auto body=std::make_unique<btRigidBody>(ci);btTransform tr;tr.setIdentity();tr.setOrigin(bt(cell.center));body->setWorldTransform(tr);body->setSleepingThresholds(.035f,.035f);body->setCcdMotionThreshold(.15f);body->setCcdSweptSphereRadius(.03f);body->setUserIndex(cell.id);cell.body=body.get();world->addRigidBody(body.get());shapes.push_back(std::move(shape));bodies.push_back(std::move(body));
+}
+void CrystalScene::placeOnBottom(){
+ btQuaternion orientation=btQuaternion::getIdentity();
+ // The octahedron starts on its +X/-Y/+Z face. Unequal dimensions change that
+ // face's normal, so derive the rotation from the actual source dimensions.
+ if(objectShape==3)orientation=shortestArcQuat(bt(norm({1/sourceSize.x,-1/sourceSize.y,1/sourceSize.z})),btVector3{0,-1,0});
+ btMatrix3x3 basis(orientation);btVector3 center{0,sourceSize.y*.5f,0};float lowest=std::numeric_limits<float>::max();
+ // Use the finished beveled collision hulls and Bullet margins, rather than
+ // nominal dimensions, to place the assembled solid directly on the wall.
+ for(auto&c:cells)for(auto p:c.hull)lowest=std::min(lowest,(basis*(bt(c.center+p)-center)).y()-c.body->getCollisionShape()->getMargin());
+ btVector3 origin=bt(boxCenter)+btVector3{0,-boxHalf-lowest,0};
+ for(auto&c:cells){btTransform pose(orientation,origin+basis*(bt(c.center)-center));c.body->setCenterOfMassTransform(pose);c.body->setInterpolationWorldTransform(pose);world->updateSingleAabb(c.body);}
 }
 void CrystalScene::create(uint32_t seed){
  density=std::clamp(density,1,96);
@@ -139,7 +150,9 @@ void CrystalScene::create(uint32_t seed){
   V3 moment{};float volume=0;for(auto&f:c.faces)for(size_t k=1;k+1<f.vertices.size();k++){V3 p=f.vertices[0],q=f.vertices[k],r=f.vertices[k+1];float v=dot(p-a,cross(q-a,r-a))/6;volume+=v;moment=moment+(a+p+q+r)*(v*.25f);}if(volume<1e-5f)throw std::runtime_error("Degenerate Voronoi volume");c.volume=volume;c.center=moment/volume;
   c.colorKey=rng();c.material=int(materials.size());materials.push_back(material({1,1,1},2,0,ior,0,{},.009f));makeCell(c);cells.push_back(std::move(c));
  }
- // Cells are released independently into the larger container; no weld bonds.
+ // Preserve the assembled object and start at rest on the lower wall. Gravity
+ // and cube rotation drive subsequent separation; there is no release impulse.
+ placeOnBottom();
  updateMaterials();
 }
 void CrystalScene::updateOptics(){updateMaterials();}

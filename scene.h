@@ -41,7 +41,7 @@ public:
  static constexpr float GlassWallGap=.015f;
  std::vector<Triangle> triangles,staticTriangles,frameTriangles,panelTriangles;std::vector<Material> materials;std::vector<Cell> cells;std::vector<Bond>bonds;std::vector<SpotLight> lights;
  MaterialSettings appearance;std::array<int,6>wallMaterials{};
- V3 sourceSize{8,5,2.8f}; // Actual source dimensions, frozen until the next drop.
+ V3 sourceSize{8,5,2.8f}; // Actual source dimensions, frozen until the next reset.
  std::unique_ptr<btDefaultCollisionConfiguration> configuration;
  std::unique_ptr<btCollisionDispatcher> dispatcher;std::unique_ptr<btDbvtBroadphase> broadphase;
  std::unique_ptr<btSequentialImpulseConstraintSolver> solver;std::unique_ptr<btDiscreteDynamicsWorld> world;
@@ -52,7 +52,7 @@ public:
  btTransform boxTransform()const;void updateBox(float dt);void updateMaterials();
  ~CrystalScene();void clearPhysics();void create(uint32_t seed=73192);void rebuild();void updateOptics();void updateBevel();bool step(float dt);bool extract(int id);int pick(V3 origin,V3 direction)const;float cohesion()const;bool boundsValid(float tolerance=.045f)const;bool geometryValid()const;bool moving()const;
 private:
- float accumulator=0;void makeStudio();void makeCell(Cell&cell);void meshCell(Cell&cell);void constrainBounds();
+ float accumulator=0;void makeStudio();void makeCell(Cell&cell);void meshCell(Cell&cell);void placeOnBottom();void constrainBounds();
  std::array<btVector3,SoundVoices>soundLinear,soundAngular,soundOrigin;
  std::array<float,SoundVoices*SoundVoices>soundLastHit{},soundLastSeen{};
  void prepareSound();void collectSound();
