@@ -14,12 +14,14 @@ RWTexture2D<float4> DenoiseTemp : register(u7);
 RWTexture2D<float4> PhotonTemp : register(u8);
 RWTexture2D<float4> PhotonFiltered : register(u9);
 RWTexture2D<float4> Resolved : register(u10);
+RWTexture2D<float4> MirrorImage : register(u11);
 cbuffer Constants : register(b0) {
  float4 CameraOrigin,CameraForward,CameraRight,CameraUp,Settings;
  uint4 Counts,Options;
  float4 LightPosition[4],LightDirection[4],LightColor[4];
  float4 PreviousOrigin,PreviousForward,PreviousRight,PreviousUp,RenderParams,SceneParams;
  float4 Palette[8],ColorSettings,GradientDirection,SourceScale;
+ float4 ViewTangents,OutputParams,PointerOrigin[2],PointerDirection[2];
 };
 static const float PI=3.14159265359;
 static const float PHOTON_SCALE=16384;
@@ -77,7 +79,7 @@ float3 roughDirection(float3 ideal,float3 side,float rough,float2 sample){
  float3 d=normalize(ideal+r*(t*cos(a)+cross(ideal,t)*sin(a)));return dot(d,side)>.0001?d:ideal;
 }
 float cone(uint i,float3 direction){return smoothstep(LightDirection[i].w,LightColor[i].w,dot(direction,LightDirection[i].xyz));}
-float3 primaryRay(float2 pixel){float2 uv=pixel/float2(Counts.xy)*2-1;return normalize(CameraForward.xyz+CameraRight.xyz*(uv.x*Settings.x*Settings.y)-CameraUp.xyz*(uv.y*Settings.x));}
+float3 primaryRay(float2 pixel){float2 uv=pixel/float2(Counts.xy);if((Options.w&64)!=0)return normalize(CameraForward.xyz+CameraRight.xyz*lerp(ViewTangents.x,ViewTangents.y,uv.x)+CameraUp.xyz*lerp(ViewTangents.w,ViewTangents.z,uv.y));uv=uv*2-1;return normalize(CameraForward.xyz+CameraRight.xyz*(uv.x*Settings.x*Settings.y)-CameraUp.xyz*(uv.y*Settings.x));}
 bool intersect(float3 o,float3 d,float maximum,out uint primitive,out float distance){
  RayDesc ray;ray.Origin=o;ray.Direction=d;ray.TMin=.00015;ray.TMax=maximum;
  RayQuery<RAY_FLAG_FORCE_OPAQUE> query;query.TraceRayInline(Scene,RAY_FLAG_NONE,255,ray);while(query.Proceed()){}
@@ -253,7 +255,7 @@ float3 path(float3 o,float3 d,inout uint seed,int channel){
 [numthreads(8,8,1)]void PathTrace(uint3 id:SV_DispatchThreadID){
  if(id.x>=Counts.x||id.y>=Counts.y)return;uint seed=hash(id.x+id.y*Counts.x+Counts.z*18593+uint(RenderParams.w)*1979);float3 result=0;
  [loop]for(uint s=0;s<Counts.w;s++){
-  bool stable=(Options.w&8)!=0;uint triplet=(Counts.z+s)/3;
+  bool stable=(Options.w&8)!=0;uint triplet=(Counts.z+s)/(Options.z!=0?3:1);
   // RGB bands share a ray footprint. At the start of every moving frame use the
   // same pixel center; additional AA samples use a deterministic low-discrepancy set.
   float2 jitter=triplet==0?float2(.5,.5):frac(float2(.5,.5)+float2(.754877666,.569840296)*triplet);
@@ -297,6 +299,16 @@ float edgeWeight(float4 a,float4 b){return pow(saturate(dot(a.xyz,b.xyz)),32)*ex
  }float amount=(Options.w&1)!=0?1:saturate(1-samples/2048);DenoiseTemp[id.xy]=float4(lerp(input.xyz,sum/max(.001,weights),amount),input.w);
 }
 float3 aces(float3 x){return saturate((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14));}
+float3 srgb(float3 x){return float3(x.x<=.0031308?x.x*12.92:1.055*pow(x.x,1/2.4)-.055,x.y<=.0031308?x.y*12.92:1.055*pow(x.y,1/2.4)-.055,x.z<=.0031308?x.z*12.92:1.055*pow(x.z,1/2.4)-.055);}
+float3 controllerPointers(float3 color,float2 pixel,float depth){
+ float3 ray=primaryRay(pixel);
+ [unroll]for(int h=0;h<2;h++)if(PointerOrigin[h].w>0){
+  float3 offset=CameraOrigin.xyz-PointerOrigin[h].xyz,axis=PointerDirection[h].xyz;float alignment=dot(ray,axis),a=dot(ray,offset),b=dot(axis,offset);
+  float t=clamp((b-alignment*a)/max(.00001,1-alignment*alignment),0,PointerOrigin[h].w);float along=dot(PointerOrigin[h].xyz+axis*t-CameraOrigin.xyz,ray);
+  float distance=length(CameraOrigin.xyz+ray*along-PointerOrigin[h].xyz-axis*t);float radius=max(.009,along*.0015);float coverage=1-smoothstep(radius*.5,radius*1.5,distance);
+  if(along>0&&along<depth+.02){float3 tint=PointerDirection[h].w>0?float3(.95,1,1):(h==0?float3(.16,.8,1):float3(1,.64,.2));color=lerp(color,tint,coverage*.85);}
+ }return color;
+}
 [numthreads(8,8,1)]void Resolve(uint3 id:SV_DispatchThreadID){
  if(id.x>=Counts.x||id.y>=Counts.y)return;float samples=max(1,float(Counts.z+Counts.w));float3 color=DenoiseTemp[id.xy].xyz;
  if(Options.y!=0&&(Options.w&8)==0&&((Options.w&1)!=0||samples<256)){
@@ -304,7 +316,7 @@ float3 aces(float3 x){return saturate((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14));}
   [unroll]for(int y=-2;y<=2;y++)[unroll]for(int x=-2;x<=2;x++){int2 q=clamp(int2(id.xy)+int2(x,y)*2,int2(0,0),int2(Counts.xy)-1);float w=exp(-.35*(x*x+y*y))*edgeWeight(g,Guide[q]);sum+=DenoiseTemp[q].xyz*w;weights+=w;}
   color=lerp(color,sum/max(.001,weights),(Options.w&1)!=0?.8:.5);
  }
- float2 uv=float2(id.xy)/float2(Counts.xy)*2-1;float vignette=1-.06*dot(uv,uv);color=pow(max(0,aces(color*RenderParams.x)*vignette),1/2.2);Resolved[id.xy]=float4(color,1);
+ float2 uv=float2(id.xy)/float2(Counts.xy)*2-1;bool vr=(Options.w&64)!=0;float vignette=vr?1:1-.06*dot(uv,uv);color=max(0,aces(color*RenderParams.x)*vignette);color=vr?srgb(color):pow(color,1/2.2);if(vr)color=controllerPointers(color,float2(id.xy)+.5,Guide[id.xy].w);Resolved[id.xy]=float4(color,1);
 }
 float3 resolvedPixel(int2 p){return Resolved[clamp(p,int2(0,0),int2(Counts.xy)-1)].rgb;}
 float3 resolvedSample(float2 p){
@@ -326,4 +338,14 @@ float3 resolvedSample(float2 p){
  float3 a=.5*(resolvedSample(float2(p)-direction/6)+resolvedSample(float2(p)+direction/6));
  float3 b=a*.5+.25*(resolvedSample(float2(p)-direction*.5)+resolvedSample(float2(p)+direction*.5));
  float l=luminance(b);Display[p]=float4(l<lo||l>hi?a:b,1);
+}
+// Letterboxed side-by-side desktop mirror. It uses the completed eye images;
+// there is no third ray-traced camera and no desktop vblank in the VR frame loop.
+[numthreads(8,8,1)]void Mirror(uint3 id:SV_DispatchThreadID){
+ uint halfWidth=uint(OutputParams.x)/2;if(id.x>=halfWidth||id.y>=uint(OutputParams.y))return;
+ float2 area=float2(halfWidth,OutputParams.y);float scale=min(area.x/Counts.x,area.y/Counts.y);float2 pixel=(float2(id.xy)+.5-(area-float2(Counts.xy)*scale)*.5)/scale-.5;
+ float3 color=0;if(all(pixel>=-.5)&&all(pixel<float2(Counts.xy)-.5)){
+  int2 p=int2(floor(pixel));float2 f=frac(pixel);int2 hi=int2(Counts.xy)-1;
+  color=lerp(lerp(Display[clamp(p,0,hi)].rgb,Display[clamp(p+int2(1,0),0,hi)].rgb,f.x),lerp(Display[clamp(p+int2(0,1),0,hi)].rgb,Display[clamp(p+1,0,hi)].rgb,f.x),f.y);
+ }MirrorImage[uint2(id.x+uint(OutputParams.z)*halfWidth,id.y)]=float4(color,1);
 }

@@ -25,8 +25,9 @@ struct Cell {int id=0,material=0;uint32_t colorKey=0;std::vector<Face> faces;std
 struct Bond {int a,b;btTypedConstraint* joint=nullptr;float area=1;bool alive=true;};
 struct Camera {
  float yaw=.34f,pitch=.18f,distance=34.0f,aperture=0;V3 target{0,7.5f,0};
- V3 origin()const{return target+V3{std::sin(yaw)*std::cos(pitch),std::sin(pitch),std::cos(yaw)*std::cos(pitch)}*distance;}
- V3 forward()const{return norm(target-origin());} V3 right()const{return norm(cross(forward(),{0,1,0}));} V3 up()const{return cross(right(),forward());}
+ bool tracked=false;V3 eye,look{0,0,-1},horizontal{1,0,0},vertical{0,1,0};
+ V3 origin()const{return tracked?eye:target+V3{std::sin(yaw)*std::cos(pitch),std::sin(pitch),std::cos(yaw)*std::cos(pitch)}*distance;}
+ V3 forward()const{return tracked?look:norm(target-origin());} V3 right()const{return tracked?horizontal:norm(cross(forward(),{0,1,0}));} V3 up()const{return tracked?vertical:cross(right(),forward());}
  V3 ray(float x,float y,float aspect)const{return norm(forward()+right()*(x*aspect*.345f)+up()*(y*.345f));}
  void pan(float dx,float dy,float viewportHeight){
   float units=2*.345f*distance/std::max(1.f,viewportHeight);auto r=right(),u=up();
@@ -50,7 +51,7 @@ public:
  float boxHalf=5.2f,boxAngle=0,rotationSpeed=4;V3 boxCenter{0,7.5f,0};std::vector<btRigidBody*>boxWalls;std::vector<btTransform>wallLocal;
  uint32_t soundGeneration=0;std::function<void(const SoundFrame&)>soundSink;
  Camera soundCamera;
- float soundPan(V3 position)const{return std::clamp(dot(position-soundCamera.target,soundCamera.right())/boxHalf,-1.f,1.f);}
+ float soundPan(V3 position)const{auto offset=position-soundCamera.target;return std::clamp(dot(offset,soundCamera.right())/(soundCamera.tracked?std::max(.1f,std::sqrt(dot(offset,offset))):boxHalf),-1.f,1.f);}
  btTransform boxTransform()const;void updateBox(float dt);void updateMaterials();
  ~CrystalScene();void clearPhysics();void create(uint32_t seed=73192);void rebuild();void updateOptics();void updateBevel();bool step(float dt);bool extract(int id);int pick(V3 origin,V3 direction)const;float cohesion()const;bool boundsValid(float tolerance=.045f)const;bool geometryValid()const;bool moving()const;
 private:

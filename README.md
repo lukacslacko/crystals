@@ -17,6 +17,7 @@ A native Windows crystal tumbler built with C++20, DirectX 12 hardware ray traci
 - Six approximate resonant modes per crystal and per glass wall. Collisions drive short taps; sliding drives irregular micro-impacts.
 - Material presets also adjust contact friction, restitution, and modal sound. All shapes remain rigid, including paper and rubber finishes.
 - Stereo impacts and scraping follow the camera's left/right view, with equal-power panning and adjustable width. Live audio controls for volume, decay, impact/scrape/wall levels, pitch, scrape density, and onset spread. Preferences persist between launches.
+- Native OpenXR PC VR for Quest 2 over wired Link: stereo DXR, six-degree head tracking, Touch pointing and haptics, a floating settings panel, head-relative stereo audio, and adaptive eye resolution.
 
 ## Requirements
 
@@ -39,7 +40,15 @@ cmake --build build --config Release --parallel
 
 CMake finds DXC in the selected Windows SDK or on `PATH`. If your SDK is installed elsewhere, pass `-DDXC="C:/path/to/dxc.exe"` when configuring. To choose another output folder, pass `-DDELIVERY="C:/path/to/app"`.
 
-Keep all nine `.cso` shader files beside `CrystalSlab.exe`. The build copies the license, dependency notices, and detailed guide there too. Bullet 3.25 and Dear ImGui 1.90.9 are vendored; no dependency download is needed during the build.
+Keep all ten `.cso` shader files beside `CrystalSlab.exe`. The build copies the license, dependency notices, and guides there too. Bullet 3.25, Dear ImGui 1.90.9 and Khronos OpenXR SDK 1.1.54 are vendored; no dependency download is needed during the build. The OpenXR loader is linked statically; a separate loader DLL is unnecessary.
+
+## Quest 2 over wired Link
+
+Enter the PC Link environment in the headset, launch the app, and press **F10** or use **Quest / VR… → Enter VR**. `CrystalSlab.exe --vr` starts directly in VR. The app prefers the installed Meta Quest / Horizon Link runtime for its own process without modifying the system OpenXR setting. The VR panel also offers the registered system runtime, such as SteamVR.
+
+The cube starts 1.04 m across and 1.8 m in front of your initial head position. Lean and turn naturally. **Trigger** removes a crystal; **A** pauses, **X** rebuilds, **Y** recenters, and **B** shows a floating controls panel. Point and pull the trigger to use the panel; the right thumbstick scrolls it. All existing settings remain available there.
+
+VR has separate quality settings, adaptive resolution, optional spectral dispersion and a live whole-stereo GPU timer. Meta's headset audio endpoint is selected when available. See [VR.txt](VR.txt) for setup, performance controls, runtime selection and diagnostics. Wired Link itself is configured using [Meta's setup guide](https://www.meta.com/help/quest/509273027107091/).
 
 ## Controls
 
@@ -55,6 +64,7 @@ Keep all nine `.cso` shader files beside `CrystalSlab.exe`. The build copies the
 | **Tab** | Show/hide controls |
 | **F11** / Fullscreen | Toggle borderless fullscreen on the current monitor; **Esc** returns to the previous window |
 | **F9** | Save a clean PNG beside the executable |
+| **F10** / Quest / VR… | Enter or leave PC VR |
 
 The panel controls cell count (1–96), index of refraction, bevel width, cube rotation, optics, and GPU rendering budget. **Audio settings** opens the sound panel. The default decay is approximately 20 ms, and impacts are independently staggered within an 8 ms window to avoid synchronized starts. Audio preferences are stored in `AudioSettings.ini` beside the executable.
 

@@ -1,6 +1,6 @@
 CRYSTAL TUMBLER / ROTATING METAL CUBE / NATIVE DXR
 
-Run CrystalSlab.exe with all nine .cso shaders beside it.
+Run CrystalSlab.exe with all ten .cso shaders beside it.
 This portable C++20 / DirectX 12 app runs offline on a DXR 1.1 capable GPU.
 
 THE ROTATING CUBE
@@ -317,3 +317,9 @@ build\Release\SceneValidation.exe
 
 Bullet is zlib licensed; Dear ImGui is MIT licensed. See THIRD-PARTY.txt.
 Bullet source: https://github.com/bulletphysics/bullet3/tree/3.25
+
+QUEST 2 / WIRED PC VR
+Press F10 or choose Quest / VR... after entering wired Link in the headset.
+Use B for the floating settings panel, trigger to point/click, right stick to
+scroll, A to pause, X to rebuild, and Y to recenter. See VR.txt for details.
+Keep all ten .cso shader files beside the executable.

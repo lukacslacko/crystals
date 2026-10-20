@@ -41,9 +41,9 @@ struct GlassAudio::Impl : IXAudio2VoiceCallback {
 };
 GlassAudio::GlassAudio():impl(std::make_unique<Impl>()){}
 GlassAudio::~GlassAudio(){stop();}
-bool GlassAudio::start(){
+bool GlassAudio::start(const wchar_t*deviceId){
  if(impl->ready)return true;stop();auto&i=*impl;i.failure=S_OK;i.head=0;i.tail=0;i.nextBuffer=0;i.samples=0;i.dropped=0;
- HRESULT hr=XAudio2Create(&i.engine,0,XAUDIO2_DEFAULT_PROCESSOR);if(SUCCEEDED(hr))hr=i.engine->CreateMasteringVoice(&i.master,XAUDIO2_DEFAULT_CHANNELS,XAUDIO2_DEFAULT_SAMPLERATE,0,nullptr,nullptr,AudioCategory_GameEffects);
+ HRESULT hr=XAudio2Create(&i.engine,0,XAUDIO2_DEFAULT_PROCESSOR);if(SUCCEEDED(hr))hr=i.engine->CreateMasteringVoice(&i.master,XAUDIO2_DEFAULT_CHANNELS,XAUDIO2_DEFAULT_SAMPLERATE,0,deviceId,nullptr,AudioCategory_GameEffects);
  WAVEFORMATEX format{};format.wFormatTag=WAVE_FORMAT_IEEE_FLOAT;format.nChannels=2;format.nSamplesPerSec=SoundRate;format.wBitsPerSample=32;format.nBlockAlign=8;format.nAvgBytesPerSec=SoundRate*8;
  if(SUCCEEDED(hr))hr=i.engine->CreateSourceVoice(&i.source,&format,0,1,&i);
  if(FAILED(hr)){i.failure=hr;stop();return false;}

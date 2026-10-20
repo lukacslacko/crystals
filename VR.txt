@@ -1,0 +1,82 @@
+CRYSTAL TUMBLER - QUEST 2 / WIRED PC VR
+
+1. Connect the Quest 2 over your Link cable and enter Quest / Horizon Link
+   inside the headset. Keep the headset awake.
+2. Start CrystalSlab.exe on the PC and press F10, or choose Quest / VR...
+   and Enter VR. You can also launch CrystalSlab.exe --vr.
+3. Look forward and press Y to place the cube in front of you if needed.
+
+The app uses the installed Meta Quest / Horizon Link OpenXR runtime when
+available. This choice affects only the app process; it does not change the
+system's registered runtime. Check "Use system OpenXR runtime" before entering
+VR to use SteamVR or another registered runtime. An explicit XR_RUNTIME_JSON
+environment variable always takes precedence.
+
+CONTROLS
+
+Move/turn/lean: tracked in all six degrees of freedom. Both eyes use the
+headset's actual poses, interpupillary distance and asymmetric field of view.
+The cube is 1.04 meters across by default, 1.8 meters ahead of the initial eye
+position, with its center slightly below eye level. No artificial locomotion.
+
+  Trigger, either hand: aim at a crystal and remove it, with a short haptic tap.
+  A: pause / resume physics.
+  X: rebuild the source object.
+  Y: recenter in front of your current position and horizontal heading.
+  B: show / hide the floating controls panel.
+  Trigger on panel: click or drag controls.
+  Right thumbstick up/down while pointing at the panel: scroll.
+  F10 on PC: enter / leave VR. Home on PC: recenter in VR.
+
+The floating panel contains the existing object, color, material, lighting and
+audio controls. Desktop keyboard controls still work. The desktop window shows
+both eye images and settings; there is no additional ray-traced spectator view.
+
+PERFORMANCE AND QUALITY
+
+Start at 72 Hz in the Link PC app. In Quest / OpenXR settings:
+  - Resolution: 35-100% of the runtime's recommended eye dimensions, default
+    70%. Leave and re-enter VR after changing this setting.
+  - Adaptive resolution: enabled. Adjusts the submitted eye subrects between
+    50% and 100% of those dimensions, targeting 80% of the headset frame time.
+    This reserves time for the compositor and Link; it is not a frame-rate
+    guarantee. The live panel reports both eye resolution and full stereo GPU
+    time, including geometry, caustics, tone mapping and mirror/panel copies.
+  - Fast / Balanced / High: vary ray depth, sample count and photon count.
+    Balanced is the default. Mirrors, refraction and tinted absorption remain.
+  - Spectral dispersion in VR: optional, off initially. Enabling it traces
+    separate RGB paths and costs roughly three times as many camera rays.
+  - VR caustics: optional, enabled initially. Both eyes share the same photon
+    lighting solution and geometry acceleration structures.
+  - Physical cube size: adjustable from 0.5 to 1.6 meters across.
+
+VR uses deterministic crystal optics and spatial antialiasing. It does not
+reuse color history between eyes or across head movement. The desktop's
+progressive/stochastic controls continue to apply to desktop mode.
+
+Audio is stereo relative to your tracked head. Meta's headset output endpoint
+is used when available. Other runtimes use the Windows default output; choose
+the Quest headphones there if necessary. Existing saved audio levels are kept.
+
+If the headset disconnects, loses tracking, or reports a session error, the
+app stops submitting invalid views and shows connection status. Exit and retry
+VR after restoring Link. Failed connections return to the desktop scene.
+
+DIAGNOSTICS
+
+  CrystalSlab.exe --vr-probe --settle 0
+    Reports runtime/device/session initialization in CrystalSlab.log, then exits.
+    Exit 0 means initialization succeeded; 2 means no usable headset/session.
+
+  CrystalSlab.exe --stereo-test --capture C:\Temp\eyes --width 1400 --height 1488 --settle 0
+    Runs 72 stereo frames on the PC without a headset. Writes eyes.left.png and
+    eyes.right.png, and logs whole-stereo GPU time. This tests rendering, not
+    a headset's latency, distortion, controllers or compositor.
+    Add --validate-gpu for D3D12 resource validation (Windows Graphics Tools).
+
+Official wired Link setup:
+https://www.meta.com/help/quest/509273027107091/
+
+Native C++20 + D3D12/DXR + OpenXR. Rendering and physics run on the PC. The Quest
+receives the two eye images over Link. There is no browser, Android APK, or
+standalone Quest renderer to install.
